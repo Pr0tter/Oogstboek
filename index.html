@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Oogstboek — Moestuin bijhouden</title>
 <meta name="theme-color" content="#2f4a34">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -206,7 +209,8 @@
   }
   input:focus, select:focus, button:focus-visible{ outline:2px solid var(--leaf-light); outline-offset:1px; }
   .btn{
-    all:unset; cursor:pointer;
+    all:unset; cursor:pointer; box-sizing:border-box;
+    display:inline-flex; align-items:center; justify-content:center; text-align:center;
     background:var(--leaf); color:#fbf8ee;
     padding:8px 16px; border-radius:8px; font-size:13.5px; font-weight:500;
     transition:background .15s;
