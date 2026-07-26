@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oogstboek — Moestuin bijhouden</title>
+<meta name="theme-color" content="#2f4a34">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Oogstboek">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --soil-dark:#241a12;
+    --soil:#3d2b1f;
+    --leaf-dark:#28402c;
+    --leaf:#3f6b45;
+    --leaf-light:#6f9a6e;
+    --paper:#f2ecdd;
+    --paper-deep:#e7dfc8;
+    --line:#d8cdae;
+    --ink:#2a2417;
+    --ink-soft:#5c5442;
+    --harvest:#c1440e;
+    --harvest-soft:#e3a458;
+    --ok:#3f6b45;
+    --bad:#a5321a;
+    --radius:10px;
+    --shadow: 0 1px 2px rgba(36,26,18,.06), 0 8px 24px -12px rgba(36,26,18,.18);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;}
+  html,body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.display{
+    font-family:'Fraunces', Georgia, serif;
+    letter-spacing:-0.01em;
+  }
+  .mono{ font-family:'IBM Plex Mono', ui-monospace, monospace; }
+
+  #app{ display:flex; min-height:100vh; }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width:220px;
+    flex-shrink:0;
+    background:
+      linear-gradient(180deg, var(--soil-dark), var(--soil) 60%, var(--leaf-dark));
+    color:#efe6d3;
+    display:flex;
+    flex-direction:column;
+    padding:22px 14px;
+    position:sticky; top:0; height:100vh;
+  }
+  .brand{
+    display:flex; align-items:center; gap:10px;
+    padding:2px 8px 20px 8px;
+    border-bottom:1px solid rgba(239,230,211,.15);
+    margin-bottom:16px;
+  }
+  .brand .mark{
+    width:34px;height:34px;border-radius:8px;
+    background:radial-gradient(circle at 30% 20%, var(--leaf-light), var(--leaf) 60%, var(--leaf-dark));
+    display:flex;align-items:center;justify-content:center;
+    font-size:18px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.15);
+  }
+  .brand .name{ font-family:'Fraunces',serif; font-size:19px; font-weight:600; color:#f6efdd; line-height:1.1;}
+  .brand .sub{ font-size:11px; color:#c9bfa2; letter-spacing:.04em; text-transform:uppercase; }
+
+  nav{ display:flex; flex-direction:column; gap:3px; flex:1; }
+  nav button{
+    all:unset;
+    cursor:pointer;
+    padding:10px 12px;
+    border-radius:8px;
+    font-size:14px;
+    color:#e6dcc4;
+    display:flex; align-items:center; gap:10px;
+    transition:background .15s ease, color .15s ease;
+  }
+  nav button .ic{ width:18px; text-align:center; opacity:.9; font-size:15px;}
+  nav button:hover{ background:rgba(239,230,211,.08); }
+  nav button.active{
+    background:rgba(239,230,211,.14);
+    color:#fff;
+    box-shadow: inset 3px 0 0 var(--harvest-soft);
+  }
+  .sidebar-foot{
+    font-size:11px; color:#b4a988; padding:10px 8px 2px;
+    border-top:1px solid rgba(239,230,211,.15);
+    margin-top:10px;
+  }
+
+  /* ---------- Main ---------- */
+  main{ flex:1; min-width:0; padding:34px 40px 60px; max-width:1180px; }
+  .page-head{ margin-bottom:26px; }
+  .page-head .eyebrow{ font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--leaf); font-weight:600;}
+  .page-head h1{ margin:4px 0 4px; font-size:30px; color:var(--soil); }
+  .page-head p{ margin:0; color:var(--ink-soft); font-size:14.5px; }
+
+  .card{
+    background:#fbf8ee;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+  }
+
+  /* Dashboard stat row */
+  .stat-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px;}
+  .stat{ padding:18px 18px 16px; position:relative; overflow:hidden;}
+  .stat .label{ font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); font-weight:500;}
+  .stat .value{ font-family:'Fraunces',serif; font-size:26px; margin-top:6px; color:var(--soil); font-weight:600;}
+  .stat.profit .value{ color:var(--ok); }
+  .stat.cost .value{ color:var(--bad); }
+  .stat .stamp{
+    position:absolute; right:10px; top:10px; font-size:26px; opacity:.14;
+  }
+
+  .goal-row{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:20px; }
+  .goal{ padding:16px 18px 18px; }
+  .goal .top{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:9px;}
+  .goal .top .t{ font-size:13px; font-weight:600; color:var(--soil); text-transform:uppercase; letter-spacing:.03em;}
+  .goal .top .n{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--ink-soft);}
+  .bar-track{ height:10px; border-radius:6px; background:var(--paper-deep); overflow:hidden; border:1px solid var(--line);}
+  .bar-fill{ height:100%; background:linear-gradient(90deg, var(--leaf), var(--harvest-soft)); border-radius:6px; transition:width .4s ease;}
+
+  .grid-2{ display:grid; grid-template-columns:1.3fr 1fr; gap:16px; }
+  .panel{ padding:18px 20px 20px; }
+  .panel h3{ margin:0 0 12px; font-size:15px; color:var(--soil); }
+
+  /* year strip chart */
+  .year-strip{ display:flex; align-items:flex-end; gap:8px; height:120px; padding-top:6px;}
+  .year-bar-wrap{ flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .year-bar{ width:100%; max-width:26px; background:linear-gradient(180deg, var(--leaf-light), var(--leaf)); border-radius:4px 4px 2px 2px; min-height:2px; }
+  .year-bar-label{ font-size:10.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; }
+
+  .m3-row{ display:flex; align-items:center; gap:10px; margin-top:14px; padding-top:14px; border-top:1px dashed var(--line); }
+  .m3-row label{ font-size:12.5px; color:var(--ink-soft); }
+  .m3-row input{ width:100px; }
+
+  /* forms/inputs */
+  input, select{
+    font-family:inherit; font-size:13.5px;
+    padding:7px 9px; border-radius:7px;
+    border:1px solid var(--line); background:#fff; color:var(--ink);
+  }
+  input:focus, select:focus, button:focus-visible{ outline:2px solid var(--leaf-light); outline-offset:1px; }
+  .btn{
+    all:unset; cursor:pointer;
+    background:var(--leaf); color:#fbf8ee;
+    padding:8px 16px; border-radius:8px; font-size:13.5px; font-weight:500;
+    transition:background .15s;
+  }
+  .btn:hover{ background:var(--leaf-dark); }
+  .btn.harvest{ background:var(--harvest); }
+  .btn.harvest:hover{ background:#9c3609; }
+  .btn.ghost{ background:transparent; color:var(--bad); padding:6px 10px; font-size:12.5px;}
+  .btn.ghost:hover{ background:rgba(165,50,26,.08); }
+  .btn.small{ padding:5px 10px; font-size:12px; }
+
+  .log-form{ display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-bottom:18px;}
+  .log-form .field{ display:flex; flex-direction:column; gap:4px; }
+  .log-form label{ font-size:11.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em;}
+  .log-form select{ min-width:200px; }
+
+  .toast{
+    position:fixed; bottom:20px; right:24px; background:var(--soil); color:#f2ecdd;
+    padding:10px 16px; border-radius:8px; font-size:13px; box-shadow:var(--shadow);
+    opacity:0; transform:translateY(8px); transition:all .25s ease; pointer-events:none; z-index:50;
+  }
+  .toast.show{ opacity:1; transform:translateY(0); }
+
+  /* tables */
+  table{ width:100%; border-collapse:collapse; font-size:13.5px; }
+  thead th{
+    text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+    color:var(--ink-soft); font-weight:600; padding:8px 10px; border-bottom:2px solid var(--soil);
+    cursor:pointer; user-select:none; white-space:nowrap;
+  }
+  thead th:hover{ color:var(--soil); }
+  tbody td{ padding:8px 10px; border-bottom:1px solid var(--line); }
+  tbody tr:hover{ background:rgba(63,107,69,.05); }
+  td.num, th.num{ text-align:right; font-family:'IBM Plex Mono',monospace; }
+  .pos{ color:var(--ok); } .neg{ color:var(--bad); }
+  .name-cell{ font-weight:500; }
+  .table-wrap{ overflow-x:auto; }
+  .table-tools{ display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:10px; flex-wrap:wrap;}
+  .search{ min-width:220px; }
+  .sub-tabs{ display:flex; gap:6px; margin-bottom:16px; }
+  .sub-tabs button{
+    all:unset; cursor:pointer; padding:7px 14px; border-radius:20px; font-size:13px;
+    background:var(--paper-deep); color:var(--ink-soft); border:1px solid var(--line);
+  }
+  .sub-tabs button.active{ background:var(--soil); color:#f2ecdd; border-color:var(--soil); }
+
+  .empty{ padding:30px 10px; text-align:center; color:var(--ink-soft); font-size:13.5px; }
+  .editable{ width:80px; }
+  .crop-row-name{ display:flex; align-items:center; gap:8px; }
+  .crop-row-name input{ width:150px; }
+
+  footer.credit{ margin-top:36px; font-size:11.5px; color:var(--ink-soft); opacity:.7; }
+
+  @media (max-width: 880px){
+    #app{ flex-direction:column; }
+    .sidebar{ width:100%; height:auto; position:relative; flex-direction:row; align-items:center; padding:12px 16px; }
+    .brand{ border:none; padding:0; margin:0; }
+    .brand .sub{ display:none; }
+    nav{ flex-direction:row; overflow-x:auto; }
+    .sidebar-foot{ display:none; }
+    main{ padding:20px 16px 50px; }
+    .stat-grid, .grid-2, .goal-row{ grid-template-columns:1fr 1fr; }
+  }
+  @media (max-width: 520px){
+    .stat-grid, .grid-2, .goal-row{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">🌱</div>
+      <div>
+        <div class="name">Oogstboek</div>
+        <div class="sub">Le Vigeant · moestuin</div>
+      </div>
+    </div>
+    <nav id="nav">
+      <button data-tab="dashboard" class="active"><span class="ic">🏡</span> Dashboard</button>
+      <button data-tab="oogst"><span class="ic">🧺</span> Oogst loggen</button>
+      <button data-tab="gewassen"><span class="ic">🌿</span> Gewassen</button>
+      <button data-tab="overzicht"><span class="ic">📖</span> Overzicht</button>
+    </nav>
+    <div class="sidebar-foot">Gebaseerd op je eigen Excel — alles lokaal bewaard.</div>
+  </aside>
+
+  <main>
+    <!-- DASHBOARD -->
+    <section id="tab-dashboard">
+      <div class="page-head">
+        <div class="eyebrow">Seizoen <span id="dash-year"></span></div>
+        <h1>Overzicht moestuin</h1>
+        <p>Alle cijfers uit je gewassen-, prijs- en kostenbladen, samengevat.</p>
+      </div>
+
+      <div class="stat-grid">
+        <div class="card stat profit"><div class="stamp">€</div><div class="label">Winst (na kosten)</div><div class="value" id="st-winst">—</div></div>
+        <div class="card stat"><div class="stamp">Σ</div><div class="label">Omzet (voor kosten)</div><div class="value" id="st-omzet">—</div></div>
+        <div class="card stat"><div class="stamp">⚖</div><div class="label">Totale kg geoogst</div><div class="value" id="st-kg">—</div></div>
+        <div class="card stat cost"><div class="stamp">−</div><div class="label">Kostentotaal</div><div class="value" id="st-kosten">—</div></div>
+      </div>
+
+      <div class="goal-row">
+        <div class="card goal">
+          <div class="top"><span class="t">Doel winst</span><span class="n" id="goal-winst-n">—</span></div>
+          <div class="bar-track"><div class="bar-fill" id="goal-winst-bar"></div></div>
+        </div>
+        <div class="card goal">
+          <div class="top"><span class="t">Doel kg</span><span class="n" id="goal-kg-n">—</span></div>
+          <div class="bar-track"><div class="bar-fill" id="goal-kg-bar"></div></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card panel">
+          <h3>Kg en omzet per jaar</h3>
+          <div class="year-strip" id="year-strip"></div>
+        </div>
+        <div class="card panel">
+          <h3>Instellingen</h3>
+          <div class="log-form" style="margin-bottom:6px;">
+            <div class="field"><label>Doel winst (€)</label><input id="in-goal-winst" type="number" step="1"></div>
+            <div class="field"><label>Doel kg</label><input id="in-goal-kg" type="number" step="1"></div>
+          </div>
+          <div class="m3-row">
+            <label>Grond-/compostvolume (m³):</label>
+            <input id="in-m3" type="text">
+            <button class="btn small" id="btn-save-settings">Opslaan</button>
+          </div>
+        </div>
+      </div>
+      <footer class="credit">Oogstboek · persoonlijke tracker, data blijft op dit toestel</footer>
+    </section>
+
+    <!-- OOGST LOGGEN -->
+    <section id="tab-oogst" style="display:none;">
+      <div class="page-head">
+        <div class="eyebrow">Registreren</div>
+        <h1>Oogst loggen</h1>
+        <p>Kies een gewas en jaar, en tel de gewogen kg op bij wat er al genoteerd staat.</p>
+      </div>
+      <div class="card panel">
+        <div class="log-form">
+          <div class="field">
+            <label>Gewas</label>
+            <select id="log-crop"></select>
+          </div>
+          <div class="field">
+            <label>Jaar</label>
+            <input id="log-year" type="number" style="width:90px;">
+          </div>
+          <div class="field">
+            <label>Kg geoogst (deze keer)</label>
+            <input id="log-kg" type="number" step="0.001" min="0" style="width:110px;" placeholder="0.000">
+          </div>
+          <button class="btn harvest" id="btn-log-add">+ Toevoegen aan oogst</button>
+        </div>
+        <div id="log-feedback" style="font-size:13px;color:var(--ink-soft);"></div>
+      </div>
+
+      <div class="card panel" style="margin-top:16px;">
+        <div class="table-tools">
+          <h3 style="margin:0;">Oogst dit jaar (<span id="oogst-year-label"></span>)</h3>
+          <input class="search" id="oogst-search" placeholder="Zoek gewas…">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Gewas</th><th class="num">Kg dit jaar</th><th class="num">Prijs/kg</th><th class="num">Omzet dit jaar</th>
+            </tr></thead>
+            <tbody id="oogst-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- GEWASSEN -->
+    <section id="tab-gewassen" style="display:none;">
+      <div class="page-head">
+        <div class="eyebrow">Beheer</div>
+        <h1>Gewassen</h1>
+        <p>Prijs per kg en aankoopkosten per gewas — pas aan wanneer nodig.</p>
+      </div>
+      <div class="card panel">
+        <div class="table-tools">
+          <h3 style="margin:0;">Nieuw gewas toevoegen</h3>
+        </div>
+        <div class="log-form">
+          <div class="field"><label>Naam</label><input id="new-crop-name" type="text" placeholder="bv. meiraap"></div>
+          <div class="field"><label>Prijs per kg (€)</label><input id="new-crop-price" type="number" step="0.01" style="width:100px;"></div>
+          <div class="field"><label>Kosten (€)</label><input id="new-crop-cost" type="number" step="0.01" style="width:100px;"></div>
+          <button class="btn" id="btn-add-crop">+ Gewas toevoegen</button>
+        </div>
+      </div>
+
+      <div class="card panel" style="margin-top:16px;">
+        <div class="table-tools">
+          <h3 style="margin:0;">Alle gewassen (<span id="crop-count"></span>)</h3>
+          <input class="search" id="gewassen-search" placeholder="Zoek gewas…">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Gewas</th><th class="num">Prijs/kg (€)</th><th class="num">Kosten (€)</th><th></th>
+            </tr></thead>
+            <tbody id="gewassen-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- OVERZICHT -->
+    <section id="tab-overzicht" style="display:none;">
+      <div class="page-head">
+        <div class="eyebrow">Analyse</div>
+        <h1>Overzicht</h1>
+        <p>Zelfde cijfers als je teeltregistratie- en jaartabbladen.</p>
+      </div>
+      <div class="sub-tabs" id="overzicht-subtabs">
+        <button data-sub="gewas" class="active">Per gewas</button>
+        <button data-sub="jaar">Per jaar</button>
+      </div>
+
+      <div id="ov-gewas" class="card panel">
+        <div class="table-tools">
+          <span></span>
+          <input class="search" id="ov-search" placeholder="Zoek gewas…">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th data-k="name">Gewas</th>
+              <th class="num" data-k="kg">Kg totaal</th>
+              <th class="num" data-k="omzet">Omzet</th>
+              <th class="num" data-k="kosten">Kosten</th>
+              <th class="num" data-k="bruto">Bruto</th>
+            </tr></thead>
+            <tbody id="ov-gewas-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="ov-jaar" class="card panel" style="display:none;">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Jaar</th><th class="num">Kg totaal</th><th class="num">Omzet</th></tr></thead>
+            <tbody id="ov-jaar-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------------- Default seed data (from the user's Excel) ---------------- */
+const SEED_CROPS = [
+{"id":1,"name":"aardbeien","price":8.98,"cost":0},{"id":2,"name":"ajuin","price":1.98,"cost":2.5},
+{"id":3,"name":"andijvie","price":5.78,"cost":0},{"id":4,"name":"appels","price":2.96,"cost":30},
+{"id":5,"name":"artisjok","price":21.27,"cost":0},{"id":6,"name":"aubergine","price":5.54,"cost":0},
+{"id":7,"name":"augurk","price":7.99,"cost":0},{"id":8,"name":"bieten","price":2.98,"cost":0},
+{"id":9,"name":"blauwe bes","price":13.47,"cost":0},{"id":10,"name":"bleekselder","price":5.8,"cost":0},
+{"id":11,"name":"bloemkool","price":1.91,"cost":0},{"id":12,"name":"boerenkool","price":15.98,"cost":0},
+{"id":13,"name":"bonen","price":10.73,"cost":5},{"id":14,"name":"brocoli","price":2,"cost":0},
+{"id":15,"name":"casiss","price":20.99,"cost":0},{"id":16,"name":"chinese kool","price":6.18,"cost":0},
+{"id":17,"name":"courgette","price":4,"cost":4},{"id":18,"name":"erwten","price":13.98,"cost":0},
+{"id":19,"name":"ewige prei","price":2,"cost":0},{"id":20,"name":"framboos","price":21.52,"cost":15},
+{"id":21,"name":"kersen","price":9.9,"cost":30},{"id":22,"name":"kervel","price":20,"cost":0},
+{"id":23,"name":"knolselder","price":3.5,"cost":0},{"id":24,"name":"komkommer","price":4,"cost":5},
+{"id":25,"name":"koolrabi","price":3,"cost":1.2},{"id":26,"name":"basilicum","price":67,"cost":2},
+{"id":27,"name":"kruisbes","price":14.97,"cost":15},{"id":28,"name":"look","price":11.9,"cost":1},
+{"id":29,"name":"mais","price":8.09,"cost":0},{"id":30,"name":"meloen","price":2.62,"cost":0},
+{"id":31,"name":"paksoi","price":7.48,"cost":0},{"id":32,"name":"paprika geel","price":3.14,"cost":2.5},
+{"id":33,"name":"paprika rood","price":2,"cost":2.5},{"id":34,"name":"pastinaak","price":5,"cost":2.5},
+{"id":35,"name":"pataten","price":1.83,"cost":4},{"id":36,"name":"peer","price":1.79,"cost":0},
+{"id":37,"name":"pepers","price":20.9,"cost":0},{"id":38,"name":"perziken","price":3.99,"cost":0},
+{"id":39,"name":"pompoen","price":1.9,"cost":4},{"id":40,"name":"pruim","price":3.73,"cost":0},
+{"id":41,"name":"rabarber","price":5,"cost":0},{"id":42,"name":"radijs","price":10.25,"cost":2},
+{"id":43,"name":"rapen","price":2.99,"cost":0},{"id":44,"name":"rode bes","price":13.94,"cost":15},
+{"id":45,"name":"rode kool","price":5,"cost":1.2},{"id":46,"name":"sla","price":13.66,"cost":3.2},
+{"id":47,"name":"snack tomaat","price":13.96,"cost":2.5},{"id":48,"name":"snijselder","price":3,"cost":0.4},
+{"id":49,"name":"spinazie","price":3.73,"cost":0},{"id":50,"name":"spitskool","price":5,"cost":0.8},
+{"id":51,"name":"spruiten","price":1.79,"cost":0},{"id":52,"name":"trostomaat","price":5.98,"cost":2.5},
+{"id":53,"name":"vleestomaat","price":2.5,"cost":2.5},{"id":54,"name":"winterprei","price":1.88,"cost":0},
+{"id":55,"name":"witloof","price":1.79,"cost":0},{"id":56,"name":"witte kool","price":2.78,"cost":0},
+{"id":57,"name":"wortelen","price":1.69,"cost":3},{"id":58,"name":"zoetepunt paprika","price":4.48,"cost":2.5},
+{"id":59,"name":"zomer prei","price":1.88,"cost":0},{"id":60,"name":"Rucola","price":11.99,"cost":2.09},
+{"id":61,"name":"Kleine ananaskers","price":31.9,"cost":3.19}
+];
+const SEED_KG_2026 = {"2":10.483,"13":1.734,"17":1.072,"20":0.577,"24":3.42,"25":1.049,"26":0.065,"28":0.174,
+"34":0.033,"35":6.493,"41":7.001,"42":0.003,"44":0.245,"46":1.747,"47":0.247,"52":0.909,"53":1.089,
+"57":0.901,"58":0.087,"61":0.013};
+
+const CURRENT_YEAR = 2026;
+let DATA = null;
+let nextCropId = 62;
+let saveTimer = null;
+
+/* ---------------- Storage ---------------- */
+async function loadData(){
+  try{
+    const raw = localStorage.getItem('moestuin-data');
+    if(raw) DATA = JSON.parse(raw);
+  }catch(e){ /* no existing data yet */ }
+  if(!DATA){
+    DATA = {
+      crops: JSON.parse(JSON.stringify(SEED_CROPS)),
+      harvests: { [CURRENT_YEAR]: JSON.parse(JSON.stringify(SEED_KG_2026)) },
+      settings: { goalWinst: 10000, goalKg: 100000, m3: "39,32" }
+    };
+  }
+  nextCropId = Math.max(61, ...DATA.crops.map(c=>c.id)) + 1;
+}
+
+function scheduleSave(msg){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(()=>{
+    try{
+      localStorage.setItem('moestuin-data', JSON.stringify(DATA));
+      showToast(msg || 'Opgeslagen');
+    }catch(e){ showToast('Opslaan mislukt'); }
+  }, 250);
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._h);
+  showToast._h = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+/* ---------------- Helpers ---------------- */
+const euro = n => (n<0?'-€':'€') + Math.abs(n).toLocaleString('nl-BE',{minimumFractionDigits:2,maximumFractionDigits:2});
+const kgFmt = n => n.toLocaleString('nl-BE',{minimumFractionDigits:3,maximumFractionDigits:3}) + ' kg';
+
+function cropById(id){ return DATA.crops.find(c=>String(c.id)===String(id)); }
+
+function years(){
+  return Object.keys(DATA.harvests).map(Number).sort((a,b)=>a-b);
+}
+
+function kgForCropYear(cropId, year){
+  return (DATA.harvests[year] && DATA.harvests[year][cropId]) || 0;
+}
+
+function totalKgForCrop(cropId){
+  let sum = 0;
+  for(const y of years()) sum += kgForCropYear(cropId, y);
+  return sum;
+}
+
+function computeCropStats(){
+  return DATA.crops.map(c=>{
+    const kg = totalKgForCrop(c.id);
+    const omzet = kg * c.price;
+    const bruto = omzet - c.cost;
+    return {...c, kg, omzet, kosten:c.cost, bruto};
+  });
+}
+
+function computeYearStats(){
+  return years().map(y=>{
+    let kg=0, omzet=0;
+    const yearData = DATA.harvests[y] || {};
+    for(const cid in yearData){
+      const c = cropById(cid);
+      if(!c) continue;
+      kg += yearData[cid];
+      omzet += yearData[cid] * c.price;
+    }
+    return {year:y, kg, omzet};
+  });
+}
+
+function computeTotals(){
+  const stats = computeCropStats();
+  const totalKg = stats.reduce((a,c)=>a+c.kg,0);
+  const totalOmzet = stats.reduce((a,c)=>a+c.omzet,0);
+  const totalKosten = DATA.crops.reduce((a,c)=>a+c.cost,0);
+  const totalWinst = totalOmzet - totalKosten;
+  return {totalKg, totalOmzet, totalKosten, totalWinst};
+}
+
+/* ---------------- Rendering ---------------- */
+function renderDashboard(){
+  document.getElementById('dash-year').textContent = CURRENT_YEAR;
+  const {totalKg, totalOmzet, totalKosten, totalWinst} = computeTotals();
+  document.getElementById('st-winst').textContent = euro(totalWinst);
+  document.getElementById('st-winst').className = 'value ' + (totalWinst<0?'neg':'');
+  document.getElementById('st-omzet').textContent = euro(totalOmzet);
+  document.getElementById('st-kg').textContent = kgFmt(totalKg);
+  document.getElementById('st-kosten').textContent = euro(totalKosten);
+
+  const gw = DATA.settings.goalWinst || 1;
+  const gk = DATA.settings.goalKg || 1;
+  const pw = Math.max(0, Math.min(100, totalWinst/gw*100));
+  const pk = Math.max(0, Math.min(100, totalKg/gk*100));
+  document.getElementById('goal-winst-bar').style.width = pw+'%';
+  document.getElementById('goal-kg-bar').style.width = pk+'%';
+  document.getElementById('goal-winst-n').textContent = `${euro(totalWinst)} / ${euro(gw)} (${pw.toFixed(1)}%)`;
+  document.getElementById('goal-kg-n').textContent = `${totalKg.toFixed(1)} / ${gk.toLocaleString('nl-BE')} kg (${pk.toFixed(1)}%)`;
+
+  document.getElementById('in-goal-winst').value = DATA.settings.goalWinst;
+  document.getElementById('in-goal-kg').value = DATA.settings.goalKg;
+  document.getElementById('in-m3').value = DATA.settings.m3;
+
+  const ys = computeYearStats();
+  const strip = document.getElementById('year-strip');
+  strip.innerHTML = '';
+  const maxKg = Math.max(1, ...ys.map(y=>y.kg));
+  if(ys.length===0){
+    strip.innerHTML = '<div class="empty">Nog geen oogst gelogd.</div>';
+  } else {
+    ys.forEach(y=>{
+      const h = Math.max(3, Math.round((y.kg/maxKg)*90));
+      const wrap = document.createElement('div');
+      wrap.className='year-bar-wrap';
+      wrap.innerHTML = `<div title="${kgFmt(y.kg)} · ${euro(y.omzet)}" class="year-bar" style="height:${h}px"></div>
+        <div class="year-bar-label">${y.year}</div>`;
+      strip.appendChild(wrap);
+    });
+  }
+}
+
+function renderOogstCropSelect(){
+  const sel = document.getElementById('log-crop');
+  const current = sel.value;
+  sel.innerHTML = DATA.crops
+    .slice().sort((a,b)=>a.name.localeCompare(b.name))
+    .map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  if(current) sel.value = current;
+}
+
+function renderOogstTable(){
+  const year = Number(document.getElementById('log-year').value) || CURRENT_YEAR;
+  document.getElementById('oogst-year-label').textContent = year;
+  const q = (document.getElementById('oogst-search').value || '').toLowerCase();
+  const body = document.getElementById('oogst-body');
+  const rows = DATA.crops
+    .map(c=>({...c, kg: kgForCropYear(c.id, year)}))
+    .filter(c=> c.kg>0 || q )
+    .filter(c=> c.name.toLowerCase().includes(q))
+    .sort((a,b)=> b.kg-a.kg || a.name.localeCompare(b.name));
+  body.innerHTML = rows.length ? rows.map(c=>`
+    <tr>
+      <td class="name-cell">${c.name}</td>
+      <td class="num">${c.kg.toFixed(3)}</td>
+      <td class="num">${euro(c.price)}</td>
+      <td class="num">${euro(c.kg*c.price)}</td>
+    </tr>`).join('') : `<tr><td colspan="4"><div class="empty">Geen oogst gevonden voor ${year}.</div></td></tr>`;
+}
+
+function renderGewassen(){
+  const q = (document.getElementById('gewassen-search').value || '').toLowerCase();
+  const body = document.getElementById('gewassen-body');
+  document.getElementById('crop-count').textContent = DATA.crops.length;
+  const rows = DATA.crops.slice()
+    .filter(c=>c.name.toLowerCase().includes(q))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  body.innerHTML = rows.map(c=>`
+    <tr data-id="${c.id}">
+      <td class="crop-row-name"><input class="c-name" value="${escapeAttr(c.name)}"></td>
+      <td class="num"><input class="editable c-price" type="number" step="0.01" value="${c.price}"></td>
+      <td class="num"><input class="editable c-cost" type="number" step="0.01" value="${c.cost}"></td>
+      <td><button class="btn ghost btn-del-crop">Verwijderen</button></td>
+    </tr>`).join('');
+
+  body.querySelectorAll('tr').forEach(tr=>{
+    const id = tr.dataset.id;
+    tr.querySelector('.c-name').addEventListener('change', e=>{
+      cropById(id).name = e.target.value.trim() || cropById(id).name;
+      scheduleSave('Naam aangepast');
+      renderAll();
+    });
+    tr.querySelector('.c-price').addEventListener('change', e=>{
+      cropById(id).price = parseFloat(e.target.value)||0;
+      scheduleSave('Prijs aangepast');
+      renderAll();
+    });
+    tr.querySelector('.c-cost').addEventListener('change', e=>{
+      cropById(id).cost = parseFloat(e.target.value)||0;
+      scheduleSave('Kosten aangepast');
+      renderAll();
+    });
+    tr.querySelector('.btn-del-crop').addEventListener('click', ()=>{
+      if(!confirm(`"${cropById(id).name}" verwijderen? Dit verwijdert ook alle gelogde oogst voor dit gewas.`)) return;
+      DATA.crops = DATA.crops.filter(c=>String(c.id)!==String(id));
+      for(const y of years()) delete DATA.harvests[y][id];
+      scheduleSave('Gewas verwijderd');
+      renderAll();
+    });
+  });
+}
+
+function escapeAttr(s){ return String(s).replace(/"/g,'&quot;'); }
+
+let ovSort = {key:'bruto', dir:-1};
+function renderOverzichtGewas(){
+  const q = (document.getElementById('ov-search').value || '').toLowerCase();
+  let rows = computeCropStats().filter(c=>c.name.toLowerCase().includes(q));
+  rows.sort((a,b)=>{
+    const k = ovSort.key;
+    if(k==='name') return a.name.localeCompare(b.name) * ovSort.dir;
+    return (a[k]-b[k]) * ovSort.dir;
+  });
+  const body = document.getElementById('ov-gewas-body');
+  body.innerHTML = rows.map(c=>`
+    <tr>
+      <td class="name-cell">${c.name}</td>
+      <td class="num">${c.kg.toFixed(3)}</td>
+      <td class="num">${euro(c.omzet)}</td>
+      <td class="num">${euro(c.kosten)}</td>
+      <td class="num ${c.bruto<0?'neg':'pos'}">${euro(c.bruto)}</td>
+    </tr>`).join('');
+}
+
+function renderOverzichtJaar(){
+  const ys = computeYearStats();
+  const body = document.getElementById('ov-jaar-body');
+  body.innerHTML = ys.length ? ys.map(y=>`
+    <tr><td>${y.year}</td><td class="num">${y.kg.toFixed(3)}</td><td class="num">${euro(y.omzet)}</td></tr>
+  `).join('') : `<tr><td colspan="3"><div class="empty">Nog geen jaren met oogst.</div></td></tr>`;
+}
+
+function renderAll(){
+  renderDashboard();
+  renderOogstCropSelect();
+  renderOogstTable();
+  renderGewassen();
+  renderOverzichtGewas();
+  renderOverzichtJaar();
+}
+
+/* ---------------- Tabs ---------------- */
+document.getElementById('nav').addEventListener('click', e=>{
+  const btn = e.target.closest('button[data-tab]');
+  if(!btn) return;
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  ['dashboard','oogst','gewassen','overzicht'].forEach(t=>{
+    document.getElementById('tab-'+t).style.display = (t===btn.dataset.tab) ? '' : 'none';
+  });
+});
+
+document.getElementById('overzicht-subtabs').addEventListener('click', e=>{
+  const btn = e.target.closest('button[data-sub]');
+  if(!btn) return;
+  document.querySelectorAll('#overzicht-subtabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('ov-gewas').style.display = btn.dataset.sub==='gewas' ? '' : 'none';
+  document.getElementById('ov-jaar').style.display = btn.dataset.sub==='jaar' ? '' : 'none';
+});
+
+document.querySelectorAll('#ov-gewas thead th[data-k]').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const k = th.dataset.k;
+    if(ovSort.key===k) ovSort.dir *= -1; else { ovSort.key=k; ovSort.dir = k==='name'?1:-1; }
+    renderOverzichtGewas();
+  });
+});
+
+/* ---------------- Event wiring ---------------- */
+function init(){
+  document.getElementById('log-year').value = CURRENT_YEAR;
+
+  document.getElementById('btn-log-add').addEventListener('click', ()=>{
+    const cropId = document.getElementById('log-crop').value;
+    const year = Number(document.getElementById('log-year').value) || CURRENT_YEAR;
+    const kg = parseFloat(document.getElementById('log-kg').value);
+    const fb = document.getElementById('log-feedback');
+    if(!cropId || !kg || kg<=0){ fb.textContent = 'Vul een gewas en een geldig aantal kg in.'; return; }
+    if(!DATA.harvests[year]) DATA.harvests[year] = {};
+    DATA.harvests[year][cropId] = (DATA.harvests[year][cropId]||0) + kg;
+    document.getElementById('log-kg').value = '';
+    fb.textContent = `${kg} kg ${cropById(cropId).name} toegevoegd voor ${year}.`;
+    scheduleSave('Oogst gelogd');
+    renderAll();
+  });
+
+  document.getElementById('log-year').addEventListener('change', renderOogstTable);
+  document.getElementById('oogst-search').addEventListener('input', renderOogstTable);
+  document.getElementById('gewassen-search').addEventListener('input', renderGewassen);
+  document.getElementById('ov-search').addEventListener('input', renderOverzichtGewas);
+
+  document.getElementById('btn-add-crop').addEventListener('click', ()=>{
+    const name = document.getElementById('new-crop-name').value.trim();
+    if(!name) return;
+    const price = parseFloat(document.getElementById('new-crop-price').value)||0;
+    const cost = parseFloat(document.getElementById('new-crop-cost').value)||0;
+    DATA.crops.push({id: nextCropId++, name, price, cost});
+    document.getElementById('new-crop-name').value = '';
+    document.getElementById('new-crop-price').value = '';
+    document.getElementById('new-crop-cost').value = '';
+    scheduleSave('Gewas toegevoegd');
+    renderAll();
+  });
+
+  document.getElementById('btn-save-settings').addEventListener('click', ()=>{
+    DATA.settings.goalWinst = parseFloat(document.getElementById('in-goal-winst').value)||10000;
+    DATA.settings.goalKg = parseFloat(document.getElementById('in-goal-kg').value)||100000;
+    DATA.settings.m3 = document.getElementById('in-m3').value;
+    scheduleSave('Instellingen opgeslagen');
+    renderDashboard();
+  });
+
+  renderAll();
+}
+
+loadData().then(init);
+</script>
+</body>
+</html>
