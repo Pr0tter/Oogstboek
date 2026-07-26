@@ -378,6 +378,10 @@
       <div class="card panel">
         <div class="log-form">
           <div class="field">
+            <label>Zoek gewas</label>
+            <input id="log-crop-search" type="text" placeholder="typ om te zoeken…" style="width:150px;">
+          </div>
+          <div class="field">
             <label>Gewas</label>
             <select id="log-crop"></select>
           </div>
@@ -673,6 +677,11 @@ async function boot(){
   }
   initFirebase();
   onAuthStateChanged(fbAuth, user=>{
+    if(user && user.isAnonymous){
+      // Leftover session from before accounts existed — force the real login gate.
+      signOut(fbAuth);
+      return;
+    }
     if(user){
       currentUser = user;
       onLoggedIn(user);
@@ -853,10 +862,15 @@ function renderDashboard(){
 
 function renderOogstCropSelect(){
   const sel = document.getElementById('log-crop');
+  const q = (document.getElementById('log-crop-search')?.value || '').toLowerCase();
   const current = sel.value;
-  sel.innerHTML = DATA.crops
-    .slice().sort((a,b)=>a.name.localeCompare(b.name))
-    .map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  const filtered = DATA.crops
+    .filter(c=>c.name.toLowerCase().includes(q))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  sel.innerHTML = filtered.length
+    ? filtered.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')
+    : '<option value="">Geen gewas gevonden</option>';
+  if(filtered.some(c=>String(c.id)===String(current))) sel.value = current;
   if(current) sel.value = current;
 }
 
@@ -1133,6 +1147,7 @@ function init(){
     renderAll();
   });
 
+  document.getElementById('log-crop-search').addEventListener('input', renderOogstCropSelect);
   document.getElementById('log-year').addEventListener('change', ()=>{ renderOogstTable(); renderOogstLog(); });
   document.getElementById('oogst-search').addEventListener('input', renderOogstTable);
   document.getElementById('gewassen-search').addEventListener('input', renderGewassen);
