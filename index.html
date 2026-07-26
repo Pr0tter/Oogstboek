@@ -254,8 +254,8 @@
       </div>
 
       <div class="stat-grid">
-        <div class="card stat profit"><div class="stamp">€</div><div class="label">Winst (na kosten)</div><div class="value" id="st-winst">—</div></div>
-        <div class="card stat"><div class="stamp">Σ</div><div class="label">Omzet (voor kosten)</div><div class="value" id="st-omzet">—</div></div>
+        <div class="card stat profit"><div class="stamp">€</div><div class="label">Winst (kg × marktprijs)</div><div class="value" id="st-winst">—</div></div>
+        <div class="card stat"><div class="stamp">Σ</div><div class="label">Netto (winst − kosten)</div><div class="value" id="st-omzet">—</div></div>
         <div class="card stat"><div class="stamp">⚖</div><div class="label">Totale kg geoogst</div><div class="value" id="st-kg">—</div></div>
         <div class="card stat cost"><div class="stamp">−</div><div class="label">Kostentotaal</div><div class="value" id="st-kosten">—</div></div>
       </div>
@@ -273,7 +273,7 @@
 
       <div class="grid-2">
         <div class="card panel">
-          <h3>Kg en omzet per jaar</h3>
+          <h3>Kg en winst per jaar</h3>
           <div class="year-strip" id="year-strip"></div>
         </div>
         <div class="card panel">
@@ -326,7 +326,7 @@
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Gewas</th><th class="num">Kg dit jaar</th><th class="num">Prijs/kg</th><th class="num">Omzet dit jaar</th>
+              <th>Gewas</th><th class="num">Kg dit jaar</th><th class="num">Prijs/kg</th><th class="num">Winst dit jaar</th>
             </tr></thead>
             <tbody id="oogst-body"></tbody>
           </table>
@@ -391,9 +391,9 @@
             <thead><tr>
               <th data-k="name">Gewas</th>
               <th class="num" data-k="kg">Kg totaal</th>
-              <th class="num" data-k="omzet">Omzet</th>
+              <th class="num" data-k="winst">Winst</th>
               <th class="num" data-k="kosten">Kosten</th>
-              <th class="num" data-k="bruto">Bruto</th>
+              <th class="num" data-k="netto">Netto</th>
             </tr></thead>
             <tbody id="ov-gewas-body"></tbody>
           </table>
@@ -403,7 +403,7 @@
       <div id="ov-jaar" class="card panel" style="display:none;">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Jaar</th><th class="num">Kg totaal</th><th class="num">Omzet</th></tr></thead>
+            <thead><tr><th>Jaar</th><th class="num">Kg totaal</th><th class="num">Winst</th></tr></thead>
             <tbody id="ov-jaar-body"></tbody>
           </table>
         </div>
@@ -514,42 +514,42 @@ function totalKgForCrop(cropId){
 function computeCropStats(){
   return DATA.crops.map(c=>{
     const kg = totalKgForCrop(c.id);
-    const omzet = kg * c.price;
-    const bruto = omzet - c.cost;
-    return {...c, kg, omzet, kosten:c.cost, bruto};
+    const winst = kg * c.price;
+    const netto = winst - c.cost;
+    return {...c, kg, winst, kosten:c.cost, netto};
   });
 }
 
 function computeYearStats(){
   return years().map(y=>{
-    let kg=0, omzet=0;
+    let kg=0, winst=0;
     const yearData = DATA.harvests[y] || {};
     for(const cid in yearData){
       const c = cropById(cid);
       if(!c) continue;
       kg += yearData[cid];
-      omzet += yearData[cid] * c.price;
+      winst += yearData[cid] * c.price;
     }
-    return {year:y, kg, omzet};
+    return {year:y, kg, winst};
   });
 }
 
 function computeTotals(){
   const stats = computeCropStats();
   const totalKg = stats.reduce((a,c)=>a+c.kg,0);
-  const totalOmzet = stats.reduce((a,c)=>a+c.omzet,0);
+  const totalWinst = stats.reduce((a,c)=>a+c.winst,0);
   const totalKosten = DATA.crops.reduce((a,c)=>a+c.cost,0);
-  const totalWinst = totalOmzet - totalKosten;
-  return {totalKg, totalOmzet, totalKosten, totalWinst};
+  const totalNetto = totalWinst - totalKosten;
+  return {totalKg, totalWinst, totalKosten, totalNetto};
 }
 
 /* ---------------- Rendering ---------------- */
 function renderDashboard(){
   document.getElementById('dash-year').textContent = CURRENT_YEAR;
-  const {totalKg, totalOmzet, totalKosten, totalWinst} = computeTotals();
+  const {totalKg, totalWinst, totalKosten, totalNetto} = computeTotals();
   document.getElementById('st-winst').textContent = euro(totalWinst);
   document.getElementById('st-winst').className = 'value ' + (totalWinst<0?'neg':'');
-  document.getElementById('st-omzet').textContent = euro(totalOmzet);
+  document.getElementById('st-omzet').textContent = euro(totalNetto);
   document.getElementById('st-kg').textContent = kgFmt(totalKg);
   document.getElementById('st-kosten').textContent = euro(totalKosten);
 
@@ -577,7 +577,7 @@ function renderDashboard(){
       const h = Math.max(3, Math.round((y.kg/maxKg)*90));
       const wrap = document.createElement('div');
       wrap.className='year-bar-wrap';
-      wrap.innerHTML = `<div title="${kgFmt(y.kg)} · ${euro(y.omzet)}" class="year-bar" style="height:${h}px"></div>
+      wrap.innerHTML = `<div title="${kgFmt(y.kg)} · ${euro(y.winst)}" class="year-bar" style="height:${h}px"></div>
         <div class="year-bar-label">${y.year}</div>`;
       strip.appendChild(wrap);
     });
@@ -656,7 +656,7 @@ function renderGewassen(){
 
 function escapeAttr(s){ return String(s).replace(/"/g,'&quot;'); }
 
-let ovSort = {key:'bruto', dir:-1};
+let ovSort = {key:'netto', dir:-1};
 function renderOverzichtGewas(){
   const q = (document.getElementById('ov-search').value || '').toLowerCase();
   let rows = computeCropStats().filter(c=>c.name.toLowerCase().includes(q));
@@ -670,9 +670,9 @@ function renderOverzichtGewas(){
     <tr>
       <td class="name-cell">${c.name}</td>
       <td class="num">${c.kg.toFixed(3)}</td>
-      <td class="num">${euro(c.omzet)}</td>
+      <td class="num">${euro(c.winst)}</td>
       <td class="num">${euro(c.kosten)}</td>
-      <td class="num ${c.bruto<0?'neg':'pos'}">${euro(c.bruto)}</td>
+      <td class="num ${c.netto<0?'neg':'pos'}">${euro(c.netto)}</td>
     </tr>`).join('');
 }
 
@@ -680,7 +680,7 @@ function renderOverzichtJaar(){
   const ys = computeYearStats();
   const body = document.getElementById('ov-jaar-body');
   body.innerHTML = ys.length ? ys.map(y=>`
-    <tr><td>${y.year}</td><td class="num">${y.kg.toFixed(3)}</td><td class="num">${euro(y.omzet)}</td></tr>
+    <tr><td>${y.year}</td><td class="num">${y.kg.toFixed(3)}</td><td class="num">${euro(y.winst)}</td></tr>
   `).join('') : `<tr><td colspan="3"><div class="empty">Nog geen jaren met oogst.</div></td></tr>`;
 }
 
