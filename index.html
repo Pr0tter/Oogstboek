@@ -50,6 +50,20 @@
 
   #app{ display:flex; min-height:100vh; }
 
+  /* ---------- Boot loader (avoids a flash of the login screen) ---------- */
+  #boot-loader{
+    min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+    background: radial-gradient(circle at 30% 20%, #345a3a, #1e2f22 70%);
+    color:#e6dcc4;
+  }
+  .spinner{
+    width:32px;height:32px;border-radius:50%;
+    border:3px solid rgba(230,220,196,.25); border-top-color:#e6dcc4;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .boot-label{ font-size:13px; letter-spacing:.03em; color:#c9bfa2; }
+
   /* ---------- Auth gate ---------- */
   #auth-gate{
     min-height:100vh; display:flex; align-items:center; justify-content:center;
@@ -272,7 +286,12 @@
 </style>
 </head>
 <body>
-<div id="auth-gate">
+<div id="boot-loader">
+  <div class="spinner"></div>
+  <div class="boot-label">Oogstboek laden…</div>
+</div>
+
+<div id="auth-gate" style="display:none;">
   <div class="gate-card">
     <div class="gate-brand">
       <div class="mark">🌱</div>
@@ -654,16 +673,24 @@ function initFirebase(){
   fbDb = getFirestore(fbApp);
 }
 
+function showLoader(){
+  document.getElementById('boot-loader').style.display = 'flex';
+  document.getElementById('auth-gate').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
+}
 function showGate(){
+  document.getElementById('boot-loader').style.display = 'none';
   document.getElementById('auth-gate').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
 }
 function showAppUI(){
+  document.getElementById('boot-loader').style.display = 'none';
   document.getElementById('auth-gate').style.display = 'none';
   document.getElementById('app').style.display = '';
 }
 
 async function boot(){
+  showLoader();
   if(!firebaseConfigured()){
     // No Firebase set up at all: run fully local, no login needed.
     currentUser = null;
