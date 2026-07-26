@@ -50,6 +50,41 @@
 
   #app{ display:flex; min-height:100vh; }
 
+  /* ---------- Auth gate ---------- */
+  #auth-gate{
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background: radial-gradient(circle at 30% 20%, #345a3a, #1e2f22 70%);
+    padding:20px;
+  }
+  .gate-card{
+    width:100%; max-width:360px;
+    background:#fbf8ee; border:1px solid var(--line); border-radius:16px;
+    box-shadow: 0 20px 50px -20px rgba(0,0,0,.5);
+    padding:28px 26px 24px;
+  }
+  .gate-brand{ display:flex; align-items:center; gap:10px; margin-bottom:20px; }
+  .gate-brand .mark{
+    width:38px;height:38px;border-radius:9px;
+    background:radial-gradient(circle at 30% 20%, var(--leaf-light), var(--leaf) 60%, var(--leaf-dark));
+    display:flex;align-items:center;justify-content:center;font-size:19px;
+  }
+  .gate-title{ font-family:'Fraunces',serif; font-size:19px; font-weight:600; color:var(--soil); line-height:1.1; }
+  .gate-sub{ font-size:12px; color:var(--ink-soft); }
+  .gate-tabs{ display:flex; gap:4px; background:var(--paper-deep); border-radius:9px; padding:3px; margin-bottom:18px; }
+  .gate-tab{
+    all:unset; cursor:pointer; flex:1; text-align:center; padding:7px 0; border-radius:7px;
+    font-size:12.5px; font-weight:500; color:var(--ink-soft);
+  }
+  .gate-tab.active{ background:#fff; color:var(--soil); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  #auth-gate .field{ display:flex; flex-direction:column; gap:4px; }
+  #auth-gate .field label{ font-size:11.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; }
+  #auth-gate input{ width:100%; padding:9px 10px; }
+  .gate-error{ min-height:18px; margin-top:10px; font-size:12.5px; color:var(--bad); }
+  #gate-account{ font-size:12px; color:#c9bfa2; }
+  #gate-account button{
+    all:unset; cursor:pointer; font-size:11.5px; color:var(--harvest-soft); text-decoration:underline;
+  }
+
   /* ---------- Sidebar ---------- */
   .sidebar{
     width:220px;
@@ -237,7 +272,33 @@
 </style>
 </head>
 <body>
-<div id="app">
+<div id="auth-gate">
+  <div class="gate-card">
+    <div class="gate-brand">
+      <div class="mark">🌱</div>
+      <div>
+        <div class="gate-title">Oogstboek</div>
+        <div class="gate-sub">Elk account heeft zijn eigen tuin</div>
+      </div>
+    </div>
+    <div class="gate-tabs">
+      <button type="button" class="gate-tab active" data-mode="login">Inloggen</button>
+      <button type="button" class="gate-tab" data-mode="signup">Account aanmaken</button>
+    </div>
+    <div class="field" style="margin-bottom:10px;">
+      <label>E-mailadres</label>
+      <input id="gate-email" type="email" autocomplete="username" placeholder="jij@voorbeeld.com">
+    </div>
+    <div class="field" style="margin-bottom:14px;">
+      <label>Wachtwoord</label>
+      <input id="gate-password" type="password" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <button class="btn harvest" id="gate-submit" style="width:100%;">Inloggen</button>
+    <div id="gate-error" class="gate-error"></div>
+  </div>
+</div>
+
+<div id="app" style="display:none;">
   <aside class="sidebar">
     <div class="brand">
       <div class="mark">🌱</div>
@@ -254,6 +315,7 @@
       <button data-tab="overzicht"><span class="ic">📖</span> Overzicht</button>
     </nav>
     <div class="sidebar-foot">
+      <div id="gate-account" style="margin-bottom:6px;"></div>
       <span id="sync-status">🔄 Verbinden…</span>
     </div>
   </aside>
@@ -467,7 +529,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ---------------- Default seed data (from the user's Excel) ---------------- */
@@ -515,10 +577,13 @@ let saveTimer = null;
 let firebaseReady = false;
 let remoteDocRef = null;
 let applyingRemote = false; // guard against re-broadcasting a snapshot we just received
+let unsubscribeSnapshot = null;
+let currentUser = null;
+let appStarted = false; // guards against re-wiring events if auth state fires more than once
 let idCounter = 0;
 function genId(){ idCounter++; return Date.now().toString(36)+'-'+idCounter+'-'+Math.random().toString(36).slice(2,7); }
 
-/* ---------------- Storage: localStorage cache + Firestore sync ---------------- */
+/* ---------------- Default data & migration ---------------- */
 function defaultData(){
   const harvestLog = Object.entries(SEED_KG_2026).map(([cropId,kg])=>({
     id: genId(), cropId, year: CURRENT_YEAR, kg, ts: new Date(CURRENT_YEAR,0,1).toISOString()
@@ -552,16 +617,19 @@ function migrate(data){
   return data;
 }
 
+/* ---------------- Local cache (per account, offline fallback) ---------------- */
+function cacheKey(){
+  return currentUser ? ('moestuin-data-' + currentUser.uid) : 'moestuin-data-gast';
+}
 function loadLocalCache(){
   try{
-    const raw = localStorage.getItem('moestuin-data');
+    const raw = localStorage.getItem(cacheKey());
     if(raw) return JSON.parse(raw);
   }catch(e){ /* ignore */ }
   return null;
 }
-
 function saveLocalCache(){
-  try{ localStorage.setItem('moestuin-data', JSON.stringify(DATA)); }catch(e){ /* ignore */ }
+  try{ localStorage.setItem(cacheKey(), JSON.stringify(DATA)); }catch(e){ /* ignore */ }
 }
 
 function setSyncStatus(text){
@@ -569,47 +637,87 @@ function setSyncStatus(text){
   if(el) el.textContent = text;
 }
 
-async function loadData(){
-  DATA = migrate(loadLocalCache() || defaultData());
-  nextCropId = Math.max(61, ...DATA.crops.map(c=>c.id)) + 1;
-
+/* ---------------- Firebase: login-gated, one private tuin per account ---------------- */
+let fbApp = null, fbAuth = null, fbDb = null;
+function firebaseConfigured(){
   const cfg = window.OOGSTBOEK_FIREBASE_CONFIG;
-  const looksConfigured = cfg && cfg.apiKey && !/PLAK_HIER/.test(cfg.apiKey);
-  if(!looksConfigured){
-    setSyncStatus('📴 Alleen lokaal (geen sync)');
+  return cfg && cfg.apiKey && !/PLAK_HIER/.test(cfg.apiKey);
+}
+function initFirebase(){
+  if(fbApp) return;
+  fbApp = initializeApp(window.OOGSTBOEK_FIREBASE_CONFIG);
+  fbAuth = getAuth(fbApp);
+  fbDb = getFirestore(fbApp);
+}
+
+function showGate(){
+  document.getElementById('auth-gate').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+function showAppUI(){
+  document.getElementById('auth-gate').style.display = 'none';
+  document.getElementById('app').style.display = '';
+}
+
+async function boot(){
+  if(!firebaseConfigured()){
+    // No Firebase set up at all: run fully local, no login needed.
+    currentUser = null;
+    showAppUI();
+    document.getElementById('gate-account').textContent = '';
+    setSyncStatus('📴 Alleen lokaal (geen account nodig)');
+    DATA = migrate(loadLocalCache() || defaultData());
+    nextCropId = Math.max(61, ...DATA.crops.map(c=>c.id)) + 1;
+    startApp();
     return;
   }
-  try{
-    const app = initializeApp(cfg);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
-    remoteDocRef = doc(db, 'oogstboek', 'warre-tuin');
+  initFirebase();
+  onAuthStateChanged(fbAuth, user=>{
+    if(user){
+      currentUser = user;
+      onLoggedIn(user);
+    } else {
+      currentUser = null;
+      firebaseReady = false;
+      if(unsubscribeSnapshot){ unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+      showGate();
+    }
+  });
+}
 
-    await new Promise((resolve)=>{
-      onAuthStateChanged(auth, user=>{
-        if(!user) return;
-        firebaseReady = true;
-        onSnapshot(remoteDocRef, snap=>{
-          if(snap.exists()){
-            applyingRemote = true;
-            DATA = migrate(snap.data());
-            nextCropId = Math.max(61, ...DATA.crops.map(c=>c.id)) + 1;
-            saveLocalCache();
-            setSyncStatus('🔄 Gesynchroniseerd');
-            renderAll();
-            applyingRemote = false;
-          } else {
-            // Nothing in the cloud yet — push what we have locally to start the sync.
-            setDoc(remoteDocRef, DATA).catch(()=>{});
-          }
-          resolve();
-        }, ()=>{ setSyncStatus('📴 Offline (lokaal bewaard)'); resolve(); });
-      });
-      signInAnonymously(auth).catch(()=>{ setSyncStatus('📴 Alleen lokaal (geen sync)'); resolve(); });
-    });
-  }catch(e){
-    setSyncStatus('📴 Alleen lokaal (geen sync)');
-  }
+function onLoggedIn(user){
+  showAppUI();
+  document.getElementById('gate-account').innerHTML =
+    `Ingelogd als ${escapeAttr(user.email)} · <button id="btn-logout" type="button">uitloggen</button>`;
+  document.getElementById('btn-logout').addEventListener('click', ()=>{ signOut(fbAuth); });
+
+  // Fast local paint from this account's own cache, then let Firestore take over.
+  DATA = migrate(loadLocalCache() || defaultData());
+  nextCropId = Math.max(61, ...DATA.crops.map(c=>c.id)) + 1;
+  remoteDocRef = doc(fbDb, 'users', user.uid, 'oogstboek', 'data');
+
+  if(unsubscribeSnapshot) unsubscribeSnapshot();
+  unsubscribeSnapshot = onSnapshot(remoteDocRef, snap=>{
+    firebaseReady = true;
+    if(snap.exists()){
+      applyingRemote = true;
+      DATA = migrate(snap.data());
+      nextCropId = Math.max(61, ...DATA.crops.map(c=>c.id)) + 1;
+      saveLocalCache();
+      setSyncStatus('🔄 Gesynchroniseerd');
+      if(appStarted) renderAll();
+      applyingRemote = false;
+    } else {
+      // Nothing in the cloud yet for this account — push what we have locally to start the sync.
+      setDoc(remoteDocRef, DATA).catch(()=>{});
+    }
+    if(!appStarted) startApp();
+  }, ()=>{ setSyncStatus('📴 Offline (lokaal bewaard)'); if(!appStarted) startApp(); });
+}
+
+function startApp(){
+  appStarted = true;
+  init();
 }
 
 function scheduleSave(msg){
@@ -956,6 +1064,58 @@ document.querySelectorAll('#ov-gewas thead th[data-k]').forEach(th=>{
 });
 
 /* ---------------- Event wiring ---------------- */
+let gateMode = 'login';
+function wireAuthGate(){
+  document.querySelectorAll('.gate-tab').forEach(tab=>{
+    tab.addEventListener('click', ()=>{
+      gateMode = tab.dataset.mode;
+      document.querySelectorAll('.gate-tab').forEach(t=>t.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('gate-submit').textContent = gateMode==='login' ? 'Inloggen' : 'Account aanmaken';
+      document.getElementById('gate-error').textContent = '';
+    });
+  });
+
+  document.getElementById('gate-submit').addEventListener('click', async ()=>{
+    const email = document.getElementById('gate-email').value.trim();
+    const pw = document.getElementById('gate-password').value;
+    const errEl = document.getElementById('gate-error');
+    errEl.textContent = '';
+    if(!email || !pw){ errEl.textContent = 'Vul e-mail en wachtwoord in.'; return; }
+    if(!firebaseConfigured()){ errEl.textContent = 'Sync is niet ingesteld — vraag Claude om firebase-config.js in te vullen.'; return; }
+    initFirebase();
+    const btn = document.getElementById('gate-submit');
+    btn.textContent = 'Bezig…';
+    try{
+      if(gateMode === 'login'){
+        await signInWithEmailAndPassword(fbAuth, email, pw);
+      } else {
+        await createUserWithEmailAndPassword(fbAuth, email, pw);
+      }
+      // onAuthStateChanged picks it up from here
+    }catch(e){
+      errEl.textContent = vertaalAuthFout(e.code);
+      btn.textContent = gateMode==='login' ? 'Inloggen' : 'Account aanmaken';
+    }
+  });
+
+  document.getElementById('gate-password').addEventListener('keydown', e=>{
+    if(e.key === 'Enter') document.getElementById('gate-submit').click();
+  });
+}
+
+function vertaalAuthFout(code){
+  const map = {
+    'auth/invalid-email': 'Ongeldig e-mailadres.',
+    'auth/user-not-found': 'Geen account gevonden met dit e-mailadres.',
+    'auth/wrong-password': 'Verkeerd wachtwoord.',
+    'auth/invalid-credential': 'E-mail of wachtwoord klopt niet.',
+    'auth/email-already-in-use': 'Er bestaat al een account met dit e-mailadres — kies "Inloggen".',
+    'auth/weak-password': 'Wachtwoord moet minstens 6 tekens zijn.',
+  };
+  return map[code] || 'Er ging iets mis. Probeer het opnieuw.';
+}
+
 function init(){
   document.getElementById('log-year').value = CURRENT_YEAR;
   document.getElementById('prijs-year').value = CURRENT_YEAR;
@@ -1016,7 +1176,8 @@ function init(){
   renderAll();
 }
 
-loadData().then(init);
+wireAuthGate();
+boot();
 </script>
 </body>
 </html>
