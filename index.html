@@ -12,6 +12,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
+<script src="firebase-config.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -210,6 +211,16 @@
 
   footer.credit{ margin-top:36px; font-size:11.5px; color:var(--ink-soft); opacity:.7; }
 
+  .stat, .goal, .panel{ transition: transform .15s ease, box-shadow .15s ease; }
+  @media (min-width: 881px){
+    .stat:hover, .goal:hover{ transform: translateY(-2px); box-shadow: 0 4px 10px -4px rgba(36,26,18,.12), 0 14px 30px -14px rgba(36,26,18,.22); }
+  }
+  @media (min-width: 1400px){
+    main{ max-width:1320px; padding:44px 56px 70px; }
+    .page-head h1{ font-size:34px; }
+    .stat .value{ font-size:29px; }
+  }
+
   @media (max-width: 880px){
     #app{ flex-direction:column; }
     .sidebar{ width:100%; height:auto; position:relative; flex-direction:row; align-items:center; padding:12px 16px; }
@@ -239,9 +250,12 @@
       <button data-tab="dashboard" class="active"><span class="ic">🏡</span> Dashboard</button>
       <button data-tab="oogst"><span class="ic">🧺</span> Oogst loggen</button>
       <button data-tab="gewassen"><span class="ic">🌿</span> Gewassen</button>
+      <button data-tab="prijzen"><span class="ic">💶</span> Prijzen</button>
       <button data-tab="overzicht"><span class="ic">📖</span> Overzicht</button>
     </nav>
-    <div class="sidebar-foot">Gebaseerd op je eigen Excel — alles lokaal bewaard.</div>
+    <div class="sidebar-foot">
+      <span id="sync-status">🔄 Verbinden…</span>
+    </div>
   </aside>
 
   <main>
@@ -332,6 +346,19 @@
           </table>
         </div>
       </div>
+
+      <div class="card panel" style="margin-top:16px;">
+        <div class="table-tools">
+          <h3 style="margin:0;">Loggeschiedenis (<span id="oogst-year-label-2"></span>) — verwijderbaar</h3>
+        </div>
+        <p style="margin:-4px 0 12px;font-size:12.5px;color:var(--ink-soft);">Verkeerd ingevoerd? Verwijder de losse invoer hier — dat trekt hem meteen af van de totalen.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Datum</th><th>Gewas</th><th class="num">Kg</th><th></th></tr></thead>
+            <tbody id="oogst-log-body"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <!-- GEWASSEN -->
@@ -347,7 +374,7 @@
         </div>
         <div class="log-form">
           <div class="field"><label>Naam</label><input id="new-crop-name" type="text" placeholder="bv. meiraap"></div>
-          <div class="field"><label>Prijs per kg (€)</label><input id="new-crop-price" type="number" step="0.01" style="width:100px;"></div>
+          <div class="field"><label>Standaardprijs (€/kg)</label><input id="new-crop-price" type="number" step="0.01" style="width:100px;"></div>
           <div class="field"><label>Kosten (€)</label><input id="new-crop-cost" type="number" step="0.01" style="width:100px;"></div>
           <button class="btn" id="btn-add-crop">+ Gewas toevoegen</button>
         </div>
@@ -361,9 +388,34 @@
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Gewas</th><th class="num">Prijs/kg (€)</th><th class="num">Kosten (€)</th><th></th>
+              <th>Gewas</th><th class="num">Standaardprijs (€/kg)</th><th class="num">Kosten (€)</th><th></th>
             </tr></thead>
             <tbody id="gewassen-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRIJZEN -->
+    <section id="tab-prijzen" style="display:none;">
+      <div class="page-head">
+        <div class="eyebrow">Marktprijzen</div>
+        <h1>Prijzen per jaar</h1>
+        <p>Marktprijzen verschillen elk jaar. Zonder aanpassing hier geldt de standaardprijs uit "Gewassen".</p>
+      </div>
+      <div class="card panel">
+        <div class="log-form">
+          <div class="field"><label>Jaar</label><input id="prijs-year" type="number" style="width:100px;"></div>
+          <button class="btn small" id="btn-copy-prev-year">↺ Kopieer prijzen van vorig jaar</button>
+        </div>
+        <div class="table-tools">
+          <span></span>
+          <input class="search" id="prijzen-search" placeholder="Zoek gewas…">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Gewas</th><th class="num">Prijs dit jaar (€/kg)</th><th></th></tr></thead>
+            <tbody id="prijzen-body"></tbody>
           </table>
         </div>
       </div>
@@ -413,7 +465,11 @@
 </div>
 <div class="toast" id="toast"></div>
 
-<script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
 /* ---------------- Default seed data (from the user's Excel) ---------------- */
 const SEED_CROPS = [
 {"id":1,"name":"aardbeien","price":8.98,"cost":0},{"id":2,"name":"ajuin","price":1.98,"cost":2.5},
@@ -456,30 +512,118 @@ const CURRENT_YEAR = 2026;
 let DATA = null;
 let nextCropId = 62;
 let saveTimer = null;
+let firebaseReady = false;
+let remoteDocRef = null;
+let applyingRemote = false; // guard against re-broadcasting a snapshot we just received
+let idCounter = 0;
+function genId(){ idCounter++; return Date.now().toString(36)+'-'+idCounter+'-'+Math.random().toString(36).slice(2,7); }
 
-/* ---------------- Storage ---------------- */
-async function loadData(){
+/* ---------------- Storage: localStorage cache + Firestore sync ---------------- */
+function defaultData(){
+  const harvestLog = Object.entries(SEED_KG_2026).map(([cropId,kg])=>({
+    id: genId(), cropId, year: CURRENT_YEAR, kg, ts: new Date(CURRENT_YEAR,0,1).toISOString()
+  }));
+  return {
+    crops: JSON.parse(JSON.stringify(SEED_CROPS)),
+    harvestLog,
+    prices: {},
+    settings: { goalWinst: 10000, goalKg: 100000, m3: "39,32" }
+  };
+}
+
+// Upgrades older saved data (single accumulated kg per crop/year, no per-year prices)
+// to the current model: an individual, deletable log entry per harvest + optional
+// per-year price overrides. Safe to run on already-current data (no-op).
+function migrate(data){
+  if(!data.harvestLog){
+    data.harvestLog = [];
+    if(data.harvests){
+      for(const y in data.harvests){
+        for(const cid in data.harvests[y]){
+          const kg = data.harvests[y][cid];
+          if(kg) data.harvestLog.push({id: genId(), cropId:String(cid), year:Number(y), kg, ts:new Date().toISOString()});
+        }
+      }
+    }
+  }
+  delete data.harvests;
+  if(!data.prices) data.prices = {};
+  if(!data.settings) data.settings = { goalWinst: 10000, goalKg: 100000, m3: "" };
+  return data;
+}
+
+function loadLocalCache(){
   try{
     const raw = localStorage.getItem('moestuin-data');
-    if(raw) DATA = JSON.parse(raw);
-  }catch(e){ /* no existing data yet */ }
-  if(!DATA){
-    DATA = {
-      crops: JSON.parse(JSON.stringify(SEED_CROPS)),
-      harvests: { [CURRENT_YEAR]: JSON.parse(JSON.stringify(SEED_KG_2026)) },
-      settings: { goalWinst: 10000, goalKg: 100000, m3: "39,32" }
-    };
-  }
+    if(raw) return JSON.parse(raw);
+  }catch(e){ /* ignore */ }
+  return null;
+}
+
+function saveLocalCache(){
+  try{ localStorage.setItem('moestuin-data', JSON.stringify(DATA)); }catch(e){ /* ignore */ }
+}
+
+function setSyncStatus(text){
+  const el = document.getElementById('sync-status');
+  if(el) el.textContent = text;
+}
+
+async function loadData(){
+  DATA = migrate(loadLocalCache() || defaultData());
   nextCropId = Math.max(61, ...DATA.crops.map(c=>c.id)) + 1;
+
+  const cfg = window.OOGSTBOEK_FIREBASE_CONFIG;
+  const looksConfigured = cfg && cfg.apiKey && !/PLAK_HIER/.test(cfg.apiKey);
+  if(!looksConfigured){
+    setSyncStatus('📴 Alleen lokaal (geen sync)');
+    return;
+  }
+  try{
+    const app = initializeApp(cfg);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    remoteDocRef = doc(db, 'oogstboek', 'warre-tuin');
+
+    await new Promise((resolve)=>{
+      onAuthStateChanged(auth, user=>{
+        if(!user) return;
+        firebaseReady = true;
+        onSnapshot(remoteDocRef, snap=>{
+          if(snap.exists()){
+            applyingRemote = true;
+            DATA = migrate(snap.data());
+            nextCropId = Math.max(61, ...DATA.crops.map(c=>c.id)) + 1;
+            saveLocalCache();
+            setSyncStatus('🔄 Gesynchroniseerd');
+            renderAll();
+            applyingRemote = false;
+          } else {
+            // Nothing in the cloud yet — push what we have locally to start the sync.
+            setDoc(remoteDocRef, DATA).catch(()=>{});
+          }
+          resolve();
+        }, ()=>{ setSyncStatus('📴 Offline (lokaal bewaard)'); resolve(); });
+      });
+      signInAnonymously(auth).catch(()=>{ setSyncStatus('📴 Alleen lokaal (geen sync)'); resolve(); });
+    });
+  }catch(e){
+    setSyncStatus('📴 Alleen lokaal (geen sync)');
+  }
 }
 
 function scheduleSave(msg){
+  saveLocalCache();
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(()=>{
-    try{
-      localStorage.setItem('moestuin-data', JSON.stringify(DATA));
-      showToast(msg || 'Opgeslagen');
-    }catch(e){ showToast('Opslaan mislukt'); }
+  saveTimer = setTimeout(async ()=>{
+    if(firebaseReady && remoteDocRef && !applyingRemote){
+      try{
+        await setDoc(remoteDocRef, DATA);
+        showToast(msg || 'Gesynchroniseerd');
+        return;
+      }catch(e){ showToast('Lokaal bewaard (sync mislukt)'); return; }
+    }
+    showToast(msg || 'Lokaal bewaard');
   }, 250);
 }
 
@@ -497,24 +641,44 @@ const kgFmt = n => n.toLocaleString('nl-BE',{minimumFractionDigits:3,maximumFrac
 
 function cropById(id){ return DATA.crops.find(c=>String(c.id)===String(id)); }
 
+/* ---- Prijzen: standaardprijs op het gewas, met optionele overschrijving per jaar ---- */
+function getPrice(cropId, year){
+  const override = DATA.prices[year] && DATA.prices[year][cropId];
+  if(override !== undefined && override !== null && override !== '') return Number(override);
+  const c = cropById(cropId);
+  return c ? c.price : 0;
+}
+function setPrice(cropId, year, price){
+  if(!DATA.prices[year]) DATA.prices[year] = {};
+  DATA.prices[year][cropId] = price;
+}
+function clearPriceOverride(cropId, year){
+  if(DATA.prices[year]) delete DATA.prices[year][cropId];
+}
+
+/* ---- Oogst: elke registratie is een losse, verwijderbare regel ---- */
 function years(){
-  return Object.keys(DATA.harvests).map(Number).sort((a,b)=>a-b);
+  const set = new Set(DATA.harvestLog.map(e=>Number(e.year)));
+  return Array.from(set).sort((a,b)=>a-b);
+}
+
+function entriesFor(cropId, year){
+  return DATA.harvestLog.filter(e=>String(e.cropId)===String(cropId) && Number(e.year)===Number(year));
 }
 
 function kgForCropYear(cropId, year){
-  return (DATA.harvests[year] && DATA.harvests[year][cropId]) || 0;
+  return entriesFor(cropId, year).reduce((a,e)=>a+e.kg,0);
 }
 
 function totalKgForCrop(cropId){
-  let sum = 0;
-  for(const y of years()) sum += kgForCropYear(cropId, y);
-  return sum;
+  return DATA.harvestLog.filter(e=>String(e.cropId)===String(cropId)).reduce((a,e)=>a+e.kg,0);
 }
 
 function computeCropStats(){
   return DATA.crops.map(c=>{
-    const kg = totalKgForCrop(c.id);
-    const winst = kg * c.price;
+    const entries = DATA.harvestLog.filter(e=>String(e.cropId)===String(c.id));
+    const kg = entries.reduce((a,e)=>a+e.kg,0);
+    const winst = entries.reduce((a,e)=>a+e.kg*getPrice(c.id,e.year),0);
     const netto = winst - c.cost;
     return {...c, kg, winst, kosten:c.cost, netto};
   });
@@ -522,14 +686,9 @@ function computeCropStats(){
 
 function computeYearStats(){
   return years().map(y=>{
-    let kg=0, winst=0;
-    const yearData = DATA.harvests[y] || {};
-    for(const cid in yearData){
-      const c = cropById(cid);
-      if(!c) continue;
-      kg += yearData[cid];
-      winst += yearData[cid] * c.price;
-    }
+    const entries = DATA.harvestLog.filter(e=>Number(e.year)===y);
+    const kg = entries.reduce((a,e)=>a+e.kg,0);
+    const winst = entries.reduce((a,e)=>a+e.kg*getPrice(e.cropId,e.year),0);
     return {year:y, kg, winst};
   });
 }
@@ -593,13 +752,17 @@ function renderOogstCropSelect(){
   if(current) sel.value = current;
 }
 
+function currentOogstYear(){
+  return Number(document.getElementById('log-year').value) || CURRENT_YEAR;
+}
+
 function renderOogstTable(){
-  const year = Number(document.getElementById('log-year').value) || CURRENT_YEAR;
+  const year = currentOogstYear();
   document.getElementById('oogst-year-label').textContent = year;
   const q = (document.getElementById('oogst-search').value || '').toLowerCase();
   const body = document.getElementById('oogst-body');
   const rows = DATA.crops
-    .map(c=>({...c, kg: kgForCropYear(c.id, year)}))
+    .map(c=>({...c, kg: kgForCropYear(c.id, year), price: getPrice(c.id, year)}))
     .filter(c=> c.kg>0 || q )
     .filter(c=> c.name.toLowerCase().includes(q))
     .sort((a,b)=> b.kg-a.kg || a.name.localeCompare(b.name));
@@ -610,6 +773,36 @@ function renderOogstTable(){
       <td class="num">${euro(c.price)}</td>
       <td class="num">${euro(c.kg*c.price)}</td>
     </tr>`).join('') : `<tr><td colspan="4"><div class="empty">Geen oogst gevonden voor ${year}.</div></td></tr>`;
+}
+
+function renderOogstLog(){
+  const year = currentOogstYear();
+  document.getElementById('oogst-year-label-2').textContent = year;
+  const body = document.getElementById('oogst-log-body');
+  const entries = DATA.harvestLog
+    .filter(e=>Number(e.year)===year)
+    .slice()
+    .sort((a,b)=> (b.ts||'').localeCompare(a.ts||''));
+  body.innerHTML = entries.length ? entries.map(e=>{
+    const c = cropById(e.cropId);
+    const dt = e.ts ? new Date(e.ts).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+    return `<tr data-id="${e.id}">
+      <td class="mono" style="font-size:12px;color:var(--ink-soft);white-space:nowrap;">${dt}</td>
+      <td class="name-cell">${c ? c.name : '(verwijderd gewas)'}</td>
+      <td class="num">${e.kg.toFixed(3)}</td>
+      <td><button class="btn ghost small btn-del-entry">Verwijderen</button></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="4"><div class="empty">Nog geen invoer voor ${year}.</div></td></tr>`;
+
+  body.querySelectorAll('.btn-del-entry').forEach(btn=>{
+    btn.addEventListener('click', ev=>{
+      const id = ev.target.closest('tr').dataset.id;
+      if(!confirm('Deze invoer verwijderen?')) return;
+      DATA.harvestLog = DATA.harvestLog.filter(x=>String(x.id)!==String(id));
+      scheduleSave('Invoer verwijderd');
+      renderAll();
+    });
+  });
 }
 
 function renderGewassen(){
@@ -636,7 +829,7 @@ function renderGewassen(){
     });
     tr.querySelector('.c-price').addEventListener('change', e=>{
       cropById(id).price = parseFloat(e.target.value)||0;
-      scheduleSave('Prijs aangepast');
+      scheduleSave('Standaardprijs aangepast');
       renderAll();
     });
     tr.querySelector('.c-cost').addEventListener('change', e=>{
@@ -645,9 +838,10 @@ function renderGewassen(){
       renderAll();
     });
     tr.querySelector('.btn-del-crop').addEventListener('click', ()=>{
-      if(!confirm(`"${cropById(id).name}" verwijderen? Dit verwijdert ook alle gelogde oogst voor dit gewas.`)) return;
+      if(!confirm(`"${cropById(id).name}" verwijderen? Dit verwijdert ook alle gelogde oogst en prijsafwijkingen voor dit gewas.`)) return;
       DATA.crops = DATA.crops.filter(c=>String(c.id)!==String(id));
-      for(const y of years()) delete DATA.harvests[y][id];
+      DATA.harvestLog = DATA.harvestLog.filter(e=>String(e.cropId)!==String(id));
+      for(const y in DATA.prices) delete DATA.prices[y][id];
       scheduleSave('Gewas verwijderd');
       renderAll();
     });
@@ -655,6 +849,44 @@ function renderGewassen(){
 }
 
 function escapeAttr(s){ return String(s).replace(/"/g,'&quot;'); }
+
+function currentPrijsYear(){
+  return Number(document.getElementById('prijs-year').value) || CURRENT_YEAR;
+}
+
+function renderPrijzen(){
+  const year = currentPrijsYear();
+  const q = (document.getElementById('prijzen-search').value || '').toLowerCase();
+  const body = document.getElementById('prijzen-body');
+  const rows = DATA.crops.slice().filter(c=>c.name.toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name));
+  body.innerHTML = rows.map(c=>{
+    const override = DATA.prices[year] && DATA.prices[year][c.id];
+    const hasOverride = override !== undefined && override !== null && override !== '';
+    const val = hasOverride ? override : c.price;
+    return `<tr data-id="${c.id}">
+      <td class="name-cell">${c.name}${hasOverride?'':' <span style="font-size:11px;color:var(--ink-soft);">(standaard)</span>'}</td>
+      <td class="num"><input class="editable p-price" type="number" step="0.01" value="${val}"></td>
+      <td>${hasOverride?'<button class="btn ghost small btn-reset-price">Terug naar standaard</button>':''}</td>
+    </tr>`;
+  }).join('');
+
+  body.querySelectorAll('tr').forEach(tr=>{
+    const id = tr.dataset.id;
+    tr.querySelector('.p-price').addEventListener('change', e=>{
+      const v = parseFloat(e.target.value);
+      if(isNaN(v)) return;
+      setPrice(id, year, v);
+      scheduleSave(`Prijs ${year} aangepast`);
+      renderAll();
+    });
+    const resetBtn = tr.querySelector('.btn-reset-price');
+    if(resetBtn) resetBtn.addEventListener('click', ()=>{
+      clearPriceOverride(id, year);
+      scheduleSave('Terug naar standaardprijs');
+      renderAll();
+    });
+  });
+}
 
 let ovSort = {key:'netto', dir:-1};
 function renderOverzichtGewas(){
@@ -688,7 +920,9 @@ function renderAll(){
   renderDashboard();
   renderOogstCropSelect();
   renderOogstTable();
+  renderOogstLog();
   renderGewassen();
+  renderPrijzen();
   renderOverzichtGewas();
   renderOverzichtJaar();
 }
@@ -699,7 +933,7 @@ document.getElementById('nav').addEventListener('click', e=>{
   if(!btn) return;
   document.querySelectorAll('#nav button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  ['dashboard','oogst','gewassen','overzicht'].forEach(t=>{
+  ['dashboard','oogst','gewassen','prijzen','overzicht'].forEach(t=>{
     document.getElementById('tab-'+t).style.display = (t===btn.dataset.tab) ? '' : 'none';
   });
 });
@@ -724,25 +958,39 @@ document.querySelectorAll('#ov-gewas thead th[data-k]').forEach(th=>{
 /* ---------------- Event wiring ---------------- */
 function init(){
   document.getElementById('log-year').value = CURRENT_YEAR;
+  document.getElementById('prijs-year').value = CURRENT_YEAR;
 
   document.getElementById('btn-log-add').addEventListener('click', ()=>{
     const cropId = document.getElementById('log-crop').value;
-    const year = Number(document.getElementById('log-year').value) || CURRENT_YEAR;
+    const year = currentOogstYear();
     const kg = parseFloat(document.getElementById('log-kg').value);
     const fb = document.getElementById('log-feedback');
     if(!cropId || !kg || kg<=0){ fb.textContent = 'Vul een gewas en een geldig aantal kg in.'; return; }
-    if(!DATA.harvests[year]) DATA.harvests[year] = {};
-    DATA.harvests[year][cropId] = (DATA.harvests[year][cropId]||0) + kg;
+    DATA.harvestLog.push({id: genId(), cropId, year, kg, ts: new Date().toISOString()});
     document.getElementById('log-kg').value = '';
     fb.textContent = `${kg} kg ${cropById(cropId).name} toegevoegd voor ${year}.`;
     scheduleSave('Oogst gelogd');
     renderAll();
   });
 
-  document.getElementById('log-year').addEventListener('change', renderOogstTable);
+  document.getElementById('log-year').addEventListener('change', ()=>{ renderOogstTable(); renderOogstLog(); });
   document.getElementById('oogst-search').addEventListener('input', renderOogstTable);
   document.getElementById('gewassen-search').addEventListener('input', renderGewassen);
   document.getElementById('ov-search').addEventListener('input', renderOverzichtGewas);
+
+  document.getElementById('prijs-year').addEventListener('change', renderPrijzen);
+  document.getElementById('prijzen-search').addEventListener('input', renderPrijzen);
+  document.getElementById('btn-copy-prev-year').addEventListener('click', ()=>{
+    const year = currentPrijsYear();
+    const prevYear = year - 1;
+    if(!DATA.prices[prevYear] || Object.keys(DATA.prices[prevYear]).length===0){
+      showToast(`Geen prijzen gevonden voor ${prevYear}`);
+      return;
+    }
+    DATA.prices[year] = {...(DATA.prices[year]||{}), ...DATA.prices[prevYear]};
+    scheduleSave(`Prijzen gekopieerd van ${prevYear}`);
+    renderAll();
+  });
 
   document.getElementById('btn-add-crop').addEventListener('click', ()=>{
     const name = document.getElementById('new-crop-name').value.trim();
