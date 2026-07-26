@@ -39,11 +39,16 @@
   }
   *{box-sizing:border-box;}
   body{margin:0;}
+  html{ scroll-behavior:smooth; }
   html,body{
     background:var(--paper);
     color:var(--ink);
     font-family:'IBM Plex Sans', system-ui, sans-serif;
     -webkit-font-smoothing:antialiased;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+    html{ scroll-behavior:auto; }
   }
   h1,h2,h3,.display{
     font-family:'Fraunces', Georgia, serif;
@@ -138,10 +143,10 @@
     font-size:14px;
     color:#e6dcc4;
     display:flex; align-items:center; gap:10px;
-    transition:background .15s ease, color .15s ease;
+    transition:background .15s ease, color .15s ease, transform .15s ease;
   }
   nav button .ic{ width:18px; text-align:center; opacity:.9; font-size:15px;}
-  nav button:hover{ background:rgba(239,230,211,.08); }
+  nav button:hover{ background:rgba(239,230,211,.08); transform:translateX(2px); }
   nav button.active{
     background:rgba(239,230,211,.14);
     color:#fff;
@@ -155,6 +160,8 @@
 
   /* ---------- Main ---------- */
   main{ flex:1; min-width:0; padding:34px 40px 60px; max-width:1180px; }
+  main > section{ animation: fadeIn .22s ease; }
+  @keyframes fadeIn{ from{ opacity:0; transform:translateY(4px); } to{ opacity:1; transform:translateY(0); } }
   .page-head{ margin-bottom:26px; }
   .page-head .eyebrow{ font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--leaf); font-weight:600;}
   .page-head h1{ margin:4px 0 4px; font-size:30px; color:var(--soil); }
@@ -191,10 +198,36 @@
   .panel h3{ margin:0 0 12px; font-size:15px; color:var(--soil); }
 
   /* year strip chart */
-  .year-strip{ display:flex; align-items:flex-end; gap:8px; height:120px; padding-top:6px;}
-  .year-bar-wrap{ flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; }
-  .year-bar{ width:100%; max-width:26px; background:linear-gradient(180deg, var(--leaf-light), var(--leaf)); border-radius:4px 4px 2px 2px; min-height:2px; }
+  .year-strip{ display:flex; align-items:flex-end; gap:18px; height:150px; padding:20px 4px 6px; overflow-x:auto; justify-content:flex-start; }
+  .year-bar-wrap{ position:relative; flex:0 0 46px; display:flex; flex-direction:column; align-items:center; gap:7px; }
+  .year-bar-value{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:600; color:var(--soil);
+    white-space:nowrap;
+  }
+  .year-bar{
+    width:100%; max-width:34px; background:linear-gradient(180deg, var(--leaf-light), var(--leaf));
+    border-radius:6px 6px 3px 3px; min-height:3px; cursor:default;
+    transition:filter .18s ease, transform .18s ease, box-shadow .18s ease;
+    transform-origin:bottom center;
+  }
+  .year-bar-wrap:hover .year-bar{
+    filter:brightness(1.08);
+    transform:scaleY(1.015);
+    box-shadow:0 6px 14px -6px rgba(63,107,69,.5);
+  }
   .year-bar-label{ font-size:10.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; }
+  .year-bar-tip{
+    position:absolute; bottom:calc(100% + 8px); left:50%;
+    transform:translate(-50%,4px); white-space:nowrap;
+    background:var(--soil); color:#f2ecdd; font-size:11.5px; font-family:'IBM Plex Mono',monospace;
+    padding:6px 10px; border-radius:7px; box-shadow:0 8px 18px -6px rgba(36,26,18,.4);
+    opacity:0; pointer-events:none; transition:opacity .16s ease, transform .16s ease; z-index:5;
+  }
+  .year-bar-tip::after{
+    content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%);
+    border:5px solid transparent; border-top-color:var(--soil);
+  }
+  .year-bar-wrap:hover .year-bar-tip{ opacity:1; transform:translate(-50%,0); }
 
   .m3-row{ display:flex; align-items:center; gap:10px; margin-top:14px; padding-top:14px; border-top:1px dashed var(--line); }
   .m3-row label{ font-size:12.5px; color:var(--ink-soft); }
@@ -206,14 +239,17 @@
     padding:7px 9px; border-radius:7px;
     border:1px solid var(--line); background:#fff; color:var(--ink);
   }
-  input:focus, select:focus, button:focus-visible{ outline:2px solid var(--leaf-light); outline-offset:1px; }
+  input, select{ transition:box-shadow .15s ease, border-color .15s ease; }
+  input:focus, select:focus{ outline:none; border-color:var(--leaf); box-shadow:0 0 0 3px rgba(63,107,69,.16); }
+  button:focus-visible{ outline:2px solid var(--leaf-light); outline-offset:1px; }
   .btn{
     all:unset; cursor:pointer; box-sizing:border-box;
     display:inline-flex; align-items:center; justify-content:center; text-align:center;
     background:var(--leaf); color:#fbf8ee;
     padding:8px 16px; border-radius:8px; font-size:13.5px; font-weight:500;
-    transition:background .15s;
+    transition:background .15s ease, transform .1s ease;
   }
+  .btn:active{ transform:scale(.96); }
   .btn:hover{ background:var(--leaf-dark); }
   .btn.harvest{ background:var(--harvest); }
   .btn.harvest:hover{ background:#9c3609; }
@@ -242,6 +278,7 @@
   }
   thead th:hover{ color:var(--soil); }
   tbody td{ padding:8px 10px; border-bottom:1px solid var(--line); }
+  tbody tr{ transition:background .12s ease; }
   tbody tr:hover{ background:rgba(63,107,69,.05); }
   td.num, th.num{ text-align:right; font-family:'IBM Plex Mono',monospace; }
   .pos{ color:var(--ok); } .neg{ color:var(--bad); }
@@ -887,10 +924,14 @@ function renderDashboard(){
     strip.innerHTML = '<div class="empty">Nog geen oogst gelogd.</div>';
   } else {
     ys.forEach(y=>{
-      const h = Math.max(3, Math.round((y.kg/maxKg)*90));
+      const h = Math.max(4, Math.round((y.kg/maxKg)*92));
       const wrap = document.createElement('div');
       wrap.className='year-bar-wrap';
-      wrap.innerHTML = `<div title="${kgFmt(y.kg)} · ${euro(y.winst)}" class="year-bar" style="height:${h}px"></div>
+      wrap.innerHTML = `
+        <div class="year-bar-value">${euro(y.winst)}</div>
+        <div class="year-bar" style="height:${h}px">
+          <div class="year-bar-tip">${kgFmt(y.kg)} · ${euro(y.winst)}</div>
+        </div>
         <div class="year-bar-label">${y.year}</div>`;
       strip.appendChild(wrap);
     });
