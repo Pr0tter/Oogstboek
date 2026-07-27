@@ -359,6 +359,7 @@
       <button data-tab="gewassen"><span class="ic">🌿</span> Gewassen</button>
       <button data-tab="prijzen"><span class="ic">💶</span> Prijzen</button>
       <button data-tab="overzicht"><span class="ic">📖</span> Overzicht</button>
+      <button data-tab="leaderboard"><span class="ic">🏆</span> Leaderboard</button>
       <button data-tab="account"><span class="ic">👤</span> Account</button>
     </nav>
     <div class="sidebar-foot">
@@ -583,6 +584,22 @@
       </div>
       <div class="card panel" id="account-panel">Bezig met laden…</div>
     </section>
+
+    <!-- LEADERBOARD -->
+    <section id="tab-leaderboard" style="display:none;">
+      <div class="page-head">
+        <div class="eyebrow">Vergelijk</div>
+        <h1>Leaderboard</h1>
+        <p>Ranglijst met je FitLog-vrienden — wie oogst het meest?</p>
+      </div>
+      <div class="card panel">
+        <div class="sub-tabs" id="lb-subtabs">
+          <button type="button" data-lb="winst" class="active">Winst</button>
+          <button type="button" data-lb="kg">Kg geoogst</button>
+        </div>
+        <div id="lb-body"><div class="empty">Bezig met laden…</div></div>
+      </div>
+    </section>
   </main>
 </div>
 <div class="toast" id="toast"></div>
@@ -590,7 +607,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ---------------- Default seed data (from the user's Excel) ---------------- */
 const SEED_CROPS = [
@@ -685,6 +702,14 @@ function loadLocalCache(){
   try{
     const raw = localStorage.getItem(cacheKey());
     if(raw) return JSON.parse(raw);
+    // Nothing under this account yet — check for data left behind from before
+    // accounts existed (a single shared key). Recovered once, then cleared so
+    // a second account on the same device doesn't also claim it.
+    const legacy = localStorage.getItem('moestuin-data');
+    if(legacy){
+      localStorage.removeItem('moestuin-data');
+      return JSON.parse(legacy);
+    }
   }catch(e){ /* ignore */ }
   return null;
 }
@@ -760,6 +785,7 @@ async function boot(){
 
 function onLoggedIn(user){
   showAppUI();
+  startFriendsListeners();
 
   // Fast local paint from this account's own cache, then let Firestore take over.
   DATA = migrate(loadLocalCache() || defaultData());
@@ -1101,6 +1127,93 @@ function renderOverzichtJaar(){
   `).join('') : `<tr><td colspan="3"><div class="empty">Nog geen jaren met oogst.</div></td></tr>`;
 }
 
+/* ---------------- Leaderboard: reuses FitLog's friends system ---------------- */
+let lbMetric = 'winst';
+let friendsList = []; // [{uid, naam}]
+let friendsStarted = false;
+let _lbUit = [], _lbIn = [];
+
+function startFriendsListeners(){
+  if(friendsStarted || !fbDb || !currentUser) return;
+  friendsStarted = true;
+  const V = collection(fbDb, 'verzoeken');
+  onSnapshot(query(V, where('naar','==', currentUser.uid)), qs=>{
+    const vr=[];
+    qs.forEach(d=>{ const x=d.data(); if(x.status==='geaccepteerd') vr.push({uid:x.van, naam:x.vanNaam}); });
+    _lbIn = vr; mergeFriends();
+  }, ()=>{});
+  onSnapshot(query(V, where('van','==', currentUser.uid)), qs=>{
+    const vr=[];
+    qs.forEach(d=>{ const x=d.data(); if(x.status==='geaccepteerd') vr.push({uid:x.naar, naam:x.naarNaam}); });
+    _lbUit = vr; mergeFriends();
+  }, ()=>{});
+}
+
+function mergeFriends(){
+  const all = [..._lbUit, ..._lbIn];
+  const seen = {};
+  friendsList = all.filter(v=>{ if(seen[v.uid]) return false; seen[v.uid]=1; return true; });
+  renderLeaderboard();
+}
+
+// Computes {kg, winst} for an arbitrary (already-migrated) oogstboek data object.
+function totalsFor(data){
+  let kg = 0, winst = 0;
+  (data.harvestLog||[]).forEach(e=>{
+    const crop = (data.crops||[]).find(c=>String(c.id)===String(e.cropId));
+    const override = data.prices && data.prices[e.year] && data.prices[e.year][e.cropId];
+    const price = (override !== undefined && override !== null && override !== '') ? Number(override) : (crop ? crop.price : 0);
+    kg += e.kg;
+    winst += e.kg * price;
+  });
+  return {kg, winst};
+}
+
+async function fetchFriendStats(uid){
+  try{
+    const snap = await getDoc(doc(fbDb, 'users', uid, 'oogstboek', 'data'));
+    if(!snap.exists()) return {kg:0, winst:0};
+    return totalsFor(migrate(snap.data()));
+  }catch(e){ return {kg:0, winst:0}; }
+}
+
+async function renderLeaderboard(){
+  const body = document.getElementById('lb-body');
+  if(!body) return;
+
+  if(!firebaseConfigured() || !currentUser){
+    body.innerHTML = '<div class="empty">Log in met je account om de leaderboard te zien.</div>';
+    return;
+  }
+
+  const mine = computeTotals();
+  const rows = [{ uid: currentUser.uid, naam: currentUser.email, kg: mine.totalKg, winst: mine.totalWinst, isMe: true }];
+
+  if(friendsList.length > 0){
+    const stats = await Promise.all(friendsList.map(f => fetchFriendStats(f.uid)));
+    friendsList.forEach((f,i) => rows.push({ uid: f.uid, naam: f.naam, kg: stats[i].kg, winst: stats[i].winst, isMe:false }));
+  }
+
+  rows.sort((a,b) => b[lbMetric] - a[lbMetric]);
+
+  const table = `
+    <table>
+      <thead><tr><th>#</th><th>Naam</th><th class="num">${lbMetric==='winst' ? 'Winst' : 'Kg geoogst'}</th></tr></thead>
+      <tbody>
+        ${rows.map((r,i)=>`
+          <tr style="${r.isMe ? 'font-weight:600;' : ''}">
+            <td>${i+1}</td>
+            <td class="name-cell">${escapeAttr(r.naam || 'Onbekend')}${r.isMe ? ' (jij)' : ''}</td>
+            <td class="num">${lbMetric==='winst' ? euro(r.winst) : kgFmt(r.kg)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  body.innerHTML = friendsList.length===0
+    ? `<p style="margin:0 0 14px;font-size:12.5px;color:var(--ink-soft);">Nog geen vrienden gevonden — voeg vrienden toe via FitLog, dan verschijnen ze hier automatisch.</p>${table}`
+    : table;
+}
+
 function renderAccount(){
   const panel = document.getElementById('account-panel');
   if(!panel) return;
@@ -1139,6 +1252,7 @@ function renderAll(){
   renderOverzichtGewas();
   renderOverzichtJaar();
   renderAccount();
+  renderLeaderboard();
 }
 
 /* ---------------- Tabs ---------------- */
@@ -1147,7 +1261,7 @@ document.getElementById('nav').addEventListener('click', e=>{
   if(!btn) return;
   document.querySelectorAll('#nav button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  ['dashboard','oogst','gewassen','prijzen','overzicht','account'].forEach(t=>{
+  ['dashboard','oogst','gewassen','prijzen','overzicht','leaderboard','account'].forEach(t=>{
     document.getElementById('tab-'+t).style.display = (t===btn.dataset.tab) ? '' : 'none';
   });
 });
@@ -1159,6 +1273,15 @@ document.getElementById('overzicht-subtabs').addEventListener('click', e=>{
   btn.classList.add('active');
   document.getElementById('ov-gewas').style.display = btn.dataset.sub==='gewas' ? '' : 'none';
   document.getElementById('ov-jaar').style.display = btn.dataset.sub==='jaar' ? '' : 'none';
+});
+
+document.getElementById('lb-subtabs').addEventListener('click', e=>{
+  const btn = e.target.closest('button[data-lb]');
+  if(!btn) return;
+  lbMetric = btn.dataset.lb;
+  document.querySelectorAll('#lb-subtabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderLeaderboard();
 });
 
 document.querySelectorAll('#ov-gewas thead th[data-k]').forEach(th=>{
