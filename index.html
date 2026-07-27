@@ -607,7 +607,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ---------------- Default seed data (from the user's Excel) ---------------- */
 const SEED_CROPS = [
@@ -778,6 +778,9 @@ async function boot(){
       currentUser = null;
       firebaseReady = false;
       if(unsubscribeSnapshot){ unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+      if(nameUnsubscribe){ nameUnsubscribe(); nameUnsubscribe = null; }
+      myName = null; myNameStarted = false;
+      friendsList = []; friendsStarted = false; _lbUit = []; _lbIn = [];
       showGate();
     }
   });
@@ -786,6 +789,7 @@ async function boot(){
 function onLoggedIn(user){
   showAppUI();
   startFriendsListeners();
+  startMyNameListener();
 
   // Fast local paint from this account's own cache, then let Firestore take over.
   DATA = migrate(loadLocalCache() || defaultData());
@@ -1187,7 +1191,7 @@ async function renderLeaderboard(){
   }
 
   const mine = computeTotals();
-  const rows = [{ uid: currentUser.uid, naam: currentUser.email, kg: mine.totalKg, winst: mine.totalWinst, isMe: true }];
+  const rows = [{ uid: currentUser.uid, naam: myName || 'Ik', kg: mine.totalKg, winst: mine.totalWinst, isMe: true }];
 
   if(friendsList.length > 0){
     const stats = await Promise.all(friendsList.map(f => fetchFriendStats(f.uid)));
@@ -1214,6 +1218,41 @@ async function renderLeaderboard(){
     : table;
 }
 
+/* ---------------- Naam: hergebruikt FitLog's usernames-systeem ---------------- */
+let myName = null;
+let myNameStarted = false;
+let nameUnsubscribe = null;
+
+function startMyNameListener(){
+  if(myNameStarted || !fbDb || !currentUser) return;
+  myNameStarted = true;
+  nameUnsubscribe = onSnapshot(doc(fbDb, 'users', currentUser.uid), snap=>{
+    myName = snap.exists() && snap.data().username ? snap.data().username : null;
+    renderAccount();
+    renderLeaderboard();
+  }, ()=>{});
+}
+
+async function saveMyName(newName){
+  const naam = newName.trim();
+  if(naam.length < 2){ throw new Error('Naam moet minstens 2 tekens zijn.'); }
+  const lower = naam.toLowerCase();
+  const oudLower = (myName || '').toLowerCase();
+  if(lower === oudLower) return; // ongewijzigd
+
+  const unameRef = doc(fbDb, 'usernames', lower);
+  const bestaat = await getDoc(unameRef);
+  if(bestaat.exists() && bestaat.data().uid !== currentUser.uid){
+    throw new Error('Die naam is al bezet, kies een andere.');
+  }
+  await setDoc(unameRef, { uid: currentUser.uid });
+  await setDoc(doc(fbDb, 'users', currentUser.uid), { username: naam }, { merge: true });
+  if(oudLower && oudLower !== lower){
+    try{ await deleteDoc(doc(fbDb, 'usernames', oudLower)); }catch(e){}
+  }
+  myName = naam;
+}
+
 function renderAccount(){
   const panel = document.getElementById('account-panel');
   if(!panel) return;
@@ -1230,13 +1269,37 @@ function renderAccount(){
 
   if(currentUser){
     panel.innerHTML = `
-      <p>Ingelogd als <strong>${escapeAttr(currentUser.email)}</strong>.</p>
-      <div class="account-row">
+      <p>Ingelogd als <strong>${escapeAttr(myName || '(nog geen naam ingesteld)')}</strong>.</p>
+      <div class="log-form" style="margin-bottom:10px;">
+        <div class="field">
+          <label>Naam</label>
+          <input id="acc-name-input" type="text" value="${escapeAttr(myName || '')}" placeholder="bv. Warre" style="width:180px;">
+        </div>
+        <button class="btn small" id="btn-save-name">Naam opslaan</button>
+      </div>
+      <div id="acc-name-error" style="font-size:12.5px;color:var(--bad);min-height:16px;"></div>
+      <div class="account-row" style="margin-top:6px;">
         <button class="btn ghost" id="btn-account-logout">Uitloggen</button>
         <span style="font-size:12.5px;color:var(--ink-soft);">Sync: ${escapeAttr(document.getElementById('sync-status').textContent)}</span>
       </div>
     `;
     document.getElementById('btn-account-logout').addEventListener('click', ()=>{ signOut(fbAuth); });
+    document.getElementById('btn-save-name').addEventListener('click', async ()=>{
+      const btn = document.getElementById('btn-save-name');
+      const errEl = document.getElementById('acc-name-error');
+      const val = document.getElementById('acc-name-input').value;
+      errEl.textContent = '';
+      btn.textContent = 'Bezig…';
+      try{
+        await saveMyName(val);
+        showToast('Naam opgeslagen');
+        renderAccount();
+        renderLeaderboard();
+      }catch(e){
+        errEl.textContent = e.message || 'Er ging iets mis, probeer opnieuw.';
+        btn.textContent = 'Naam opslaan';
+      }
+    });
   } else {
     panel.innerHTML = `<p>Niet ingelogd. Herlaad de pagina om het inlogscherm te zien.</p>`;
   }
