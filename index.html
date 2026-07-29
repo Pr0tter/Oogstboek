@@ -1318,19 +1318,29 @@ async function addOogstboekFriend(naam){
   if(!unameSnap.exists()) throw new Error('Geen gebruiker gevonden met die naam.');
   const targetUid = unameSnap.data().uid;
   if(targetUid === currentUser.uid) throw new Error('Dat ben je zelf.');
+
+  // Nodigde die persoon jou al uit? Dan gewoon meteen accepteren i.p.v. een nieuw verzoek maken.
+  const bestaandeUitnodiging = incomingRequests.find(r=>r.uid===targetUid);
+  if(bestaandeUitnodiging){
+    await acceptFriendRequest(bestaandeUitnodiging.id);
+    return;
+  }
+
   const targetSnap = await getDoc(doc(fbDb, 'users', targetUid));
   const targetNaam = (targetSnap.exists() && targetSnap.data().username) || naam.trim();
   const reqId = [currentUser.uid, targetUid].sort().join('_');
-  const bestaat = await getDoc(doc(fbDb, 'oogstboek_verzoeken', reqId));
-  if(bestaat.exists()){
-    const st = bestaat.data().status;
-    throw new Error(st==='geaccepteerd' ? 'Jullie zijn al vrienden.' : 'Er staat al een verzoek open.');
+  try{
+    await setDoc(doc(fbDb, 'oogstboek_verzoeken', reqId), {
+      van: currentUser.uid, naar: targetUid,
+      vanNaam: myName || 'Onbekend', naarNaam: targetNaam,
+      status: 'open'
+    });
+  }catch(e){
+    if(e && e.code === 'permission-denied'){
+      throw new Error('Jullie zijn al vrienden, of er staat al een verzoek open.');
+    }
+    throw e;
   }
-  await setDoc(doc(fbDb, 'oogstboek_verzoeken', reqId), {
-    van: currentUser.uid, naar: targetUid,
-    vanNaam: myName || 'Onbekend', naarNaam: targetNaam,
-    status: 'open'
-  });
 }
 
 async function acceptFriendRequest(id){
