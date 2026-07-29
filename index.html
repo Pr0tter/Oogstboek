@@ -37,7 +37,8 @@
     --radius:10px;
     --shadow: 0 1px 2px rgba(36,26,18,.06), 0 8px 24px -12px rgba(36,26,18,.18);
   }
-  *{box-sizing:border-box;}
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; tap-highlight-color:transparent;}
+  button, a, input, select{ -webkit-tap-highlight-color:transparent; }
   body{margin:0;}
   html{ scroll-behavior:smooth; }
   html,body{
@@ -647,8 +648,24 @@
       <div class="page-head">
         <div class="eyebrow">Vergelijk</div>
         <h1>Leaderboard</h1>
-        <p>Ranglijst met je FitLog-vrienden — wie oogst het meest?</p>
+        <p>Eigen vriendenlijst voor Oogstboek, los van FitLog — wie oogst het meest?</p>
       </div>
+
+      <div class="card panel" id="friends-panel" style="margin-bottom:16px;">
+        <h3 style="margin:0 0 4px;">Vrienden op Oogstboek</h3>
+        <p style="margin:0 0 12px;font-size:12.5px;color:var(--ink-soft);">Los van je FitLog-vrienden — voeg hier apart iemand toe via hun naam.</p>
+        <div class="log-form" style="margin-bottom:8px;">
+          <div class="field">
+            <label>Naam</label>
+            <input id="friend-name-input" type="text" placeholder="bv. Warre" style="width:170px;">
+          </div>
+          <button class="btn small" id="btn-add-friend">+ Vriend toevoegen</button>
+        </div>
+        <div id="friend-error" style="font-size:12.5px;color:var(--bad);min-height:16px;"></div>
+        <div id="friend-requests"></div>
+        <div id="friend-list"></div>
+      </div>
+
       <div class="card panel">
         <div class="sub-tabs" id="lb-subtabs">
           <button type="button" data-lb="winst" class="active">Winst</button>
@@ -846,7 +863,7 @@ async function boot(){
       if(unsubscribeSnapshot){ unsubscribeSnapshot(); unsubscribeSnapshot = null; }
       if(nameUnsubscribe){ nameUnsubscribe(); nameUnsubscribe = null; }
       myName = null; myNameStarted = false;
-      friendsList = []; friendsStarted = false; _lbUit = []; _lbIn = [];
+      friendsList = []; friendsStarted = false; _lbUit = []; _lbIn = []; incomingRequests = [];
       showGate();
     }
   });
@@ -1266,26 +1283,103 @@ function renderOverzichtJaar(){
   `).join('') : `<tr><td colspan="3"><div class="empty">Nog geen jaren met oogst.</div></td></tr>`;
 }
 
-/* ---------------- Leaderboard: reuses FitLog's friends system ---------------- */
+/* ---------------- Leaderboard: eigen, aparte vriendenlijst voor Oogstboek ---------------- */
 let lbMetric = 'winst';
 let friendsList = []; // [{uid, naam}]
+let incomingRequests = []; // [{id, uid, naam}]
 let friendsStarted = false;
 let _lbUit = [], _lbIn = [];
 
 function startFriendsListeners(){
   if(friendsStarted || !fbDb || !currentUser) return;
   friendsStarted = true;
-  const V = collection(fbDb, 'verzoeken');
+  const V = collection(fbDb, 'oogstboek_verzoeken');
   onSnapshot(query(V, where('naar','==', currentUser.uid)), qs=>{
-    const vr=[];
-    qs.forEach(d=>{ const x=d.data(); if(x.status==='geaccepteerd') vr.push({uid:x.van, naam:x.vanNaam}); });
-    _lbIn = vr; mergeFriends();
+    const acc=[], inreq=[];
+    qs.forEach(d=>{
+      const x=d.data();
+      if(x.status==='geaccepteerd') acc.push({uid:x.van, naam:x.vanNaam});
+      else if(x.status==='open') inreq.push({id:d.id, uid:x.van, naam:x.vanNaam});
+    });
+    _lbIn = acc; incomingRequests = inreq;
+    mergeFriends(); renderFriendsPanel();
   }, ()=>{});
   onSnapshot(query(V, where('van','==', currentUser.uid)), qs=>{
-    const vr=[];
-    qs.forEach(d=>{ const x=d.data(); if(x.status==='geaccepteerd') vr.push({uid:x.naar, naam:x.naarNaam}); });
-    _lbUit = vr; mergeFriends();
+    const acc=[];
+    qs.forEach(d=>{ const x=d.data(); if(x.status==='geaccepteerd') acc.push({uid:x.naar, naam:x.naarNaam}); });
+    _lbUit = acc; mergeFriends();
   }, ()=>{});
+}
+
+async function addOogstboekFriend(naam){
+  const lower = naam.trim().toLowerCase();
+  if(lower.length < 2) throw new Error('Vul een naam in.');
+  const unameSnap = await getDoc(doc(fbDb, 'usernames', lower));
+  if(!unameSnap.exists()) throw new Error('Geen gebruiker gevonden met die naam.');
+  const targetUid = unameSnap.data().uid;
+  if(targetUid === currentUser.uid) throw new Error('Dat ben je zelf.');
+  const targetSnap = await getDoc(doc(fbDb, 'users', targetUid));
+  const targetNaam = (targetSnap.exists() && targetSnap.data().username) || naam.trim();
+  const reqId = [currentUser.uid, targetUid].sort().join('_');
+  const bestaat = await getDoc(doc(fbDb, 'oogstboek_verzoeken', reqId));
+  if(bestaat.exists()){
+    const st = bestaat.data().status;
+    throw new Error(st==='geaccepteerd' ? 'Jullie zijn al vrienden.' : 'Er staat al een verzoek open.');
+  }
+  await setDoc(doc(fbDb, 'oogstboek_verzoeken', reqId), {
+    van: currentUser.uid, naar: targetUid,
+    vanNaam: myName || 'Onbekend', naarNaam: targetNaam,
+    status: 'open'
+  });
+}
+
+async function acceptFriendRequest(id){
+  await setDoc(doc(fbDb, 'oogstboek_verzoeken', id), { status: 'geaccepteerd' }, { merge: true });
+}
+async function declineFriendRequest(id){
+  await deleteDoc(doc(fbDb, 'oogstboek_verzoeken', id));
+}
+async function removeFriend(uid){
+  const reqId = [currentUser.uid, uid].sort().join('_');
+  await deleteDoc(doc(fbDb, 'oogstboek_verzoeken', reqId));
+}
+
+function renderFriendsPanel(){
+  const reqEl = document.getElementById('friend-requests');
+  const listEl = document.getElementById('friend-list');
+  if(!reqEl || !listEl) return;
+
+  reqEl.innerHTML = incomingRequests.length ? `
+    <div style="margin:6px 0 12px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-soft);margin-bottom:6px;">Openstaande verzoeken</div>
+      ${incomingRequests.map(r=>`
+        <div class="account-row" style="margin-bottom:6px;">
+          <span style="font-size:13.5px;">${escapeAttr(r.naam || 'Onbekend')}</span>
+          <button class="btn small" data-accept="${escapeAttr(r.id)}">Accepteren</button>
+          <button class="btn ghost small" data-decline="${escapeAttr(r.id)}">Weigeren</button>
+        </div>`).join('')}
+    </div>` : '';
+
+  listEl.innerHTML = friendsList.length ? `
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-soft);margin-bottom:6px;">Vrienden</div>
+    ${friendsList.map(f=>`
+      <div class="account-row" style="margin-bottom:4px;">
+        <span style="font-size:13.5px;">${escapeAttr(f.naam || 'Onbekend')}</span>
+        <button class="btn ghost small" data-remove="${escapeAttr(f.uid)}">Verwijderen</button>
+      </div>`).join('')}` : `<p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Nog geen vrienden op Oogstboek.</p>`;
+
+  reqEl.querySelectorAll('[data-accept]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{ await acceptFriendRequest(btn.dataset.accept); showToast('Vriend toegevoegd'); });
+  });
+  reqEl.querySelectorAll('[data-decline]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{ await declineFriendRequest(btn.dataset.decline); });
+  });
+  listEl.querySelectorAll('[data-remove]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm('Deze vriend verwijderen?')) return;
+      await removeFriend(btn.dataset.remove);
+    });
+  });
 }
 
 function mergeFriends(){
@@ -1589,6 +1683,22 @@ function init(){
   document.getElementById('ov-search').addEventListener('input', renderOverzichtGewas);
 
   document.getElementById('prijs-year').addEventListener('change', renderPrijzen);
+
+  document.getElementById('btn-add-friend').addEventListener('click', async ()=>{
+    const btn = document.getElementById('btn-add-friend');
+    const errEl = document.getElementById('friend-error');
+    const val = document.getElementById('friend-name-input').value;
+    errEl.textContent = '';
+    btn.textContent = 'Bezig…';
+    try{
+      await addOogstboekFriend(val);
+      document.getElementById('friend-name-input').value = '';
+      showToast('Vriendschapsverzoek verstuurd');
+    }catch(e){
+      errEl.textContent = e.message || 'Er ging iets mis, probeer opnieuw.';
+    }
+    btn.textContent = '+ Vriend toevoegen';
+  });
   document.getElementById('prijzen-search').addEventListener('input', renderPrijzen);
   document.getElementById('btn-copy-prev-year').addEventListener('click', ()=>{
     const year = currentPrijsYear();
