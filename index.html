@@ -356,6 +356,7 @@
     <nav id="nav">
       <button data-tab="dashboard" class="active"><span class="ic">🏡</span> Dashboard</button>
       <button data-tab="oogst"><span class="ic">🧺</span> Oogst loggen</button>
+      <button data-tab="kosten"><span class="ic">💸</span> Kosten loggen</button>
       <button data-tab="gewassen"><span class="ic">🌿</span> Gewassen</button>
       <button data-tab="prijzen"><span class="ic">💶</span> Prijzen</button>
       <button data-tab="overzicht"><span class="ic">📖</span> Overzicht</button>
@@ -474,6 +475,63 @@
       </div>
     </section>
 
+    <!-- KOSTEN -->
+    <section id="tab-kosten" style="display:none;">
+      <div class="page-head">
+        <div class="eyebrow">Registreren</div>
+        <h1>Kosten loggen</h1>
+        <p>Kies een gewas en jaar, en tel het bedrag op bij wat er al genoteerd staat.</p>
+      </div>
+      <div class="card panel">
+        <div class="log-form">
+          <div class="field">
+            <label>Zoek gewas</label>
+            <input id="cost-crop-search" type="text" placeholder="typ om te zoeken…" style="width:150px;">
+          </div>
+          <div class="field">
+            <label>Gewas</label>
+            <select id="cost-crop"></select>
+          </div>
+          <div class="field">
+            <label>Jaar</label>
+            <input id="cost-year" type="number" style="width:90px;">
+          </div>
+          <div class="field">
+            <label>Bedrag (€, deze keer)</label>
+            <input id="cost-bedrag" type="number" step="0.01" min="0" style="width:110px;" placeholder="0.00">
+          </div>
+          <button class="btn harvest" id="btn-cost-add">+ Toevoegen aan kosten</button>
+        </div>
+        <div id="cost-feedback" style="font-size:13px;color:var(--ink-soft);"></div>
+      </div>
+
+      <div class="card panel" style="margin-top:16px;">
+        <div class="table-tools">
+          <h3 style="margin:0;">Kosten dit jaar (<span id="cost-year-label"></span>)</h3>
+          <input class="search" id="cost-search" placeholder="Zoek gewas…">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Gewas</th><th class="num">Kosten dit jaar</th></tr></thead>
+            <tbody id="cost-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card panel" style="margin-top:16px;">
+        <div class="table-tools">
+          <h3 style="margin:0;">Loggeschiedenis (<span id="cost-year-label-2"></span>) — verwijderbaar</h3>
+        </div>
+        <p style="margin:-4px 0 12px;font-size:12.5px;color:var(--ink-soft);">Verkeerd ingevoerd? Verwijder de losse invoer hier.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Datum</th><th>Gewas</th><th class="num">Bedrag</th><th></th></tr></thead>
+            <tbody id="cost-log-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- GEWASSEN -->
     <section id="tab-gewassen" style="display:none;">
       <div class="page-head">
@@ -488,7 +546,6 @@
         <div class="log-form">
           <div class="field"><label>Naam</label><input id="new-crop-name" type="text" placeholder="bv. meiraap"></div>
           <div class="field"><label>Standaardprijs (€/kg)</label><input id="new-crop-price" type="number" step="0.01" style="width:100px;"></div>
-          <div class="field"><label>Kosten (€)</label><input id="new-crop-cost" type="number" step="0.01" style="width:100px;"></div>
           <button class="btn" id="btn-add-crop">+ Gewas toevoegen</button>
         </div>
       </div>
@@ -501,7 +558,7 @@
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Gewas</th><th class="num">Standaardprijs (€/kg)</th><th class="num">Kosten (€)</th><th></th>
+              <th>Gewas</th><th class="num">Standaardprijs (€/kg)</th><th class="num">Totale kosten</th><th></th>
             </tr></thead>
             <tbody id="gewassen-body"></tbody>
           </table>
@@ -662,14 +719,12 @@ function genId(){ idCounter++; return Date.now().toString(36)+'-'+idCounter+'-'+
 
 /* ---------------- Default data & migration ---------------- */
 function defaultData(){
-  const harvestLog = Object.entries(SEED_KG_2026).map(([cropId,kg])=>({
-    id: genId(), cropId, year: CURRENT_YEAR, kg, ts: new Date(CURRENT_YEAR,0,1).toISOString()
-  }));
   return {
     crops: JSON.parse(JSON.stringify(SEED_CROPS)),
-    harvestLog,
+    harvestLog: [],
+    costLog: [],
     prices: {},
-    settings: { goalWinst: 10000, goalKg: 100000, m3: "39,32" }
+    settings: { goalWinst: 10000, goalKg: 100000, m3: "" }
   };
 }
 
@@ -689,6 +744,17 @@ function migrate(data){
     }
   }
   delete data.harvests;
+  if(!data.costLog){
+    data.costLog = [];
+    if(data.crops){
+      data.crops.forEach(c=>{
+        if(c.cost){
+          data.costLog.push({id: genId(), cropId:String(c.id), jaar: CURRENT_YEAR, bedrag: c.cost, ts: new Date(CURRENT_YEAR,0,1).toISOString()});
+        }
+        delete c.cost;
+      });
+    }
+  }
   if(!data.prices) data.prices = {};
   if(!data.settings) data.settings = { goalWinst: 10000, goalKg: 100000, m3: "" };
   return data;
@@ -887,8 +953,9 @@ function computeCropStats(){
     const entries = DATA.harvestLog.filter(e=>String(e.cropId)===String(c.id));
     const kg = entries.reduce((a,e)=>a+e.kg,0);
     const winst = entries.reduce((a,e)=>a+e.kg*getPrice(c.id,e.year),0);
-    const netto = winst - c.cost;
-    return {...c, kg, winst, kosten:c.cost, netto};
+    const kosten = DATA.costLog.filter(e=>String(e.cropId)===String(c.id)).reduce((a,e)=>a+e.bedrag,0);
+    const netto = winst - kosten;
+    return {...c, kg, winst, kosten, netto};
   });
 }
 
@@ -905,7 +972,7 @@ function computeTotals(){
   const stats = computeCropStats();
   const totalKg = stats.reduce((a,c)=>a+c.kg,0);
   const totalWinst = stats.reduce((a,c)=>a+c.winst,0);
-  const totalKosten = DATA.crops.reduce((a,c)=>a+c.cost,0);
+  const totalKosten = DATA.costLog.reduce((a,e)=>a+e.bedrag,0);
   const totalNetto = totalWinst - totalKosten;
   return {totalKg, totalWinst, totalKosten, totalNetto};
 }
@@ -1020,10 +1087,82 @@ function renderOogstLog(){
   });
 }
 
+function renderCostCropSelect(){
+  const sel = document.getElementById('cost-crop');
+  const q = (document.getElementById('cost-crop-search')?.value || '').toLowerCase();
+  const current = sel.value;
+  const filtered = DATA.crops
+    .filter(c=>c.name.toLowerCase().includes(q))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  sel.innerHTML = filtered.length
+    ? filtered.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')
+    : '<option value="">Geen gewas gevonden</option>';
+  if(filtered.some(c=>String(c.id)===String(current))) sel.value = current;
+}
+
+function currentCostYear(){
+  return Number(document.getElementById('cost-year').value) || CURRENT_YEAR;
+}
+
+function kostenForCropYear(cropId, year){
+  return DATA.costLog
+    .filter(e=>String(e.cropId)===String(cropId) && Number(e.jaar)===Number(year))
+    .reduce((a,e)=>a+e.bedrag,0);
+}
+
+function renderCostTable(){
+  const year = currentCostYear();
+  document.getElementById('cost-year-label').textContent = year;
+  const q = (document.getElementById('cost-search').value || '').toLowerCase();
+  const body = document.getElementById('cost-body');
+  const rows = DATA.crops
+    .map(c=>({...c, bedrag: kostenForCropYear(c.id, year)}))
+    .filter(c=> c.bedrag>0 || q)
+    .filter(c=> c.name.toLowerCase().includes(q))
+    .sort((a,b)=> b.bedrag-a.bedrag || a.name.localeCompare(b.name));
+  body.innerHTML = rows.length ? rows.map(c=>`
+    <tr>
+      <td class="name-cell">${c.name}</td>
+      <td class="num">${euro(c.bedrag)}</td>
+    </tr>`).join('') : `<tr><td colspan="2"><div class="empty">Geen kosten gevonden voor ${year}.</div></td></tr>`;
+}
+
+function renderCostLog(){
+  const year = currentCostYear();
+  document.getElementById('cost-year-label-2').textContent = year;
+  const body = document.getElementById('cost-log-body');
+  const entries = DATA.costLog
+    .filter(e=>Number(e.jaar)===year)
+    .slice()
+    .sort((a,b)=> (b.ts||'').localeCompare(a.ts||''));
+  body.innerHTML = entries.length ? entries.map(e=>{
+    const c = cropById(e.cropId);
+    const dt = e.ts ? new Date(e.ts).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+    return `<tr data-id="${e.id}">
+      <td class="mono" style="font-size:12px;color:var(--ink-soft);white-space:nowrap;">${dt}</td>
+      <td class="name-cell">${c ? c.name : '(verwijderd gewas)'}</td>
+      <td class="num">${euro(e.bedrag)}</td>
+      <td><button class="btn ghost small btn-del-cost">Verwijderen</button></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="4"><div class="empty">Nog geen kosten voor ${year}.</div></td></tr>`;
+
+  body.querySelectorAll('.btn-del-cost').forEach(btn=>{
+    btn.addEventListener('click', ev=>{
+      const id = ev.target.closest('tr').dataset.id;
+      if(!confirm('Deze kosten-invoer verwijderen?')) return;
+      DATA.costLog = DATA.costLog.filter(x=>String(x.id)!==String(id));
+      scheduleSave('Kosten-invoer verwijderd');
+      renderAll();
+    });
+  });
+}
+
 function renderGewassen(){
   const q = (document.getElementById('gewassen-search').value || '').toLowerCase();
   const body = document.getElementById('gewassen-body');
   document.getElementById('crop-count').textContent = DATA.crops.length;
+  const totalCostByCrop = {};
+  DATA.costLog.forEach(e=>{ totalCostByCrop[e.cropId] = (totalCostByCrop[e.cropId]||0) + e.bedrag; });
   const rows = DATA.crops.slice()
     .filter(c=>c.name.toLowerCase().includes(q))
     .sort((a,b)=>a.name.localeCompare(b.name));
@@ -1031,7 +1170,7 @@ function renderGewassen(){
     <tr data-id="${c.id}">
       <td class="crop-row-name"><input class="c-name" value="${escapeAttr(c.name)}"></td>
       <td class="num"><input class="editable c-price" type="number" step="0.01" value="${c.price}"></td>
-      <td class="num"><input class="editable c-cost" type="number" step="0.01" value="${c.cost}"></td>
+      <td class="num">${euro(totalCostByCrop[c.id]||0)}</td>
       <td><button class="btn ghost btn-del-crop">Verwijderen</button></td>
     </tr>`).join('');
 
@@ -1047,15 +1186,11 @@ function renderGewassen(){
       scheduleSave('Standaardprijs aangepast');
       renderAll();
     });
-    tr.querySelector('.c-cost').addEventListener('change', e=>{
-      cropById(id).cost = parseFloat(e.target.value)||0;
-      scheduleSave('Kosten aangepast');
-      renderAll();
-    });
     tr.querySelector('.btn-del-crop').addEventListener('click', ()=>{
-      if(!confirm(`"${cropById(id).name}" verwijderen? Dit verwijdert ook alle gelogde oogst en prijsafwijkingen voor dit gewas.`)) return;
+      if(!confirm(`"${cropById(id).name}" verwijderen? Dit verwijdert ook alle gelogde oogst, kosten en prijsafwijkingen voor dit gewas.`)) return;
       DATA.crops = DATA.crops.filter(c=>String(c.id)!==String(id));
       DATA.harvestLog = DATA.harvestLog.filter(e=>String(e.cropId)!==String(id));
+      DATA.costLog = DATA.costLog.filter(e=>String(e.cropId)!==String(id));
       for(const y in DATA.prices) delete DATA.prices[y][id];
       scheduleSave('Gewas verwijderd');
       renderAll();
@@ -1310,6 +1445,9 @@ function renderAll(){
   renderOogstCropSelect();
   renderOogstTable();
   renderOogstLog();
+  renderCostCropSelect();
+  renderCostTable();
+  renderCostLog();
   renderGewassen();
   renderPrijzen();
   renderOverzichtGewas();
@@ -1324,7 +1462,7 @@ document.getElementById('nav').addEventListener('click', e=>{
   if(!btn) return;
   document.querySelectorAll('#nav button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  ['dashboard','oogst','gewassen','prijzen','overzicht','leaderboard','account'].forEach(t=>{
+  ['dashboard','oogst','kosten','gewassen','prijzen','overzicht','leaderboard','account'].forEach(t=>{
     document.getElementById('tab-'+t).style.display = (t===btn.dataset.tab) ? '' : 'none';
   });
 });
@@ -1410,6 +1548,7 @@ function vertaalAuthFout(code){
 
 function init(){
   document.getElementById('log-year').value = CURRENT_YEAR;
+  document.getElementById('cost-year').value = CURRENT_YEAR;
   document.getElementById('prijs-year').value = CURRENT_YEAR;
 
   document.getElementById('btn-log-add').addEventListener('click', ()=>{
@@ -1425,9 +1564,27 @@ function init(){
     renderAll();
   });
 
+  document.getElementById('btn-cost-add').addEventListener('click', ()=>{
+    const cropId = document.getElementById('cost-crop').value;
+    const year = currentCostYear();
+    const bedrag = parseFloat(document.getElementById('cost-bedrag').value);
+    const fb = document.getElementById('cost-feedback');
+    if(!cropId || !bedrag || bedrag<=0){ fb.textContent = 'Vul een gewas en een geldig bedrag in.'; return; }
+    DATA.costLog.push({id: genId(), cropId, jaar: year, bedrag, ts: new Date().toISOString()});
+    document.getElementById('cost-bedrag').value = '';
+    fb.textContent = `${euro(bedrag)} kosten voor ${cropById(cropId).name} toegevoegd (${year}).`;
+    scheduleSave('Kosten gelogd');
+    renderAll();
+  });
+
   document.getElementById('log-crop-search').addEventListener('input', renderOogstCropSelect);
   document.getElementById('log-year').addEventListener('change', ()=>{ renderOogstTable(); renderOogstLog(); });
   document.getElementById('oogst-search').addEventListener('input', renderOogstTable);
+
+  document.getElementById('cost-crop-search').addEventListener('input', renderCostCropSelect);
+  document.getElementById('cost-year').addEventListener('change', ()=>{ renderCostTable(); renderCostLog(); });
+  document.getElementById('cost-search').addEventListener('input', renderCostTable);
+
   document.getElementById('gewassen-search').addEventListener('input', renderGewassen);
   document.getElementById('ov-search').addEventListener('input', renderOverzichtGewas);
 
@@ -1449,11 +1606,9 @@ function init(){
     const name = document.getElementById('new-crop-name').value.trim();
     if(!name) return;
     const price = parseFloat(document.getElementById('new-crop-price').value)||0;
-    const cost = parseFloat(document.getElementById('new-crop-cost').value)||0;
-    DATA.crops.push({id: nextCropId++, name, price, cost});
+    DATA.crops.push({id: nextCropId++, name, price});
     document.getElementById('new-crop-name').value = '';
     document.getElementById('new-crop-price').value = '';
-    document.getElementById('new-crop-cost').value = '';
     scheduleSave('Gewas toegevoegd');
     renderAll();
   });
