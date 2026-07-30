@@ -715,7 +715,22 @@ const SEED_CROPS = [
 {"id":55,"name":"witloof","price":1.79,"cost":0},{"id":56,"name":"witte kool","price":2.78,"cost":0},
 {"id":57,"name":"wortelen","price":1.69,"cost":3},{"id":58,"name":"zoetepunt paprika","price":4.48,"cost":2.5},
 {"id":59,"name":"zomer prei","price":1.88,"cost":0},{"id":60,"name":"Rucola","price":11.99,"cost":2.09},
-{"id":61,"name":"Kleine ananaskers","price":31.9,"cost":3.19}
+{"id":61,"name":"Kleine ananaskers","price":31.9,"cost":3.19},
+{"id":62,"name":"asperges","price":15,"cost":0},{"id":63,"name":"venkel","price":4.5,"cost":0},
+{"id":64,"name":"tuinbonen","price":6.5,"cost":0},{"id":65,"name":"sjalotten","price":4,"cost":0},
+{"id":66,"name":"zoete aardappel","price":3.5,"cost":0},{"id":67,"name":"butternut","price":3,"cost":0},
+{"id":68,"name":"snijbiet","price":6,"cost":0},{"id":69,"name":"koolraap","price":2.5,"cost":0},
+{"id":70,"name":"schorseneren","price":7,"cost":0},{"id":71,"name":"veldsla","price":9,"cost":0},
+{"id":72,"name":"postelein","price":10,"cost":0},{"id":73,"name":"aardpeer","price":3,"cost":0},
+{"id":74,"name":"peterselie","price":15,"cost":0},{"id":75,"name":"tijm","price":20,"cost":0},
+{"id":76,"name":"rozemarijn","price":18,"cost":0},{"id":77,"name":"munt","price":15,"cost":0},
+{"id":78,"name":"bieslook","price":15,"cost":0},{"id":79,"name":"dille","price":12,"cost":0},
+{"id":80,"name":"koriander","price":15,"cost":0},{"id":81,"name":"druiven","price":6,"cost":0},
+{"id":82,"name":"bramen","price":18,"cost":0},{"id":83,"name":"kiwi","price":5,"cost":0},
+{"id":84,"name":"vijgen","price":9,"cost":0},{"id":85,"name":"abrikozen","price":5,"cost":0},
+{"id":86,"name":"nectarines","price":4,"cost":0},{"id":87,"name":"watermeloen","price":1.5,"cost":0},
+{"id":88,"name":"hazelnoten","price":8,"cost":0},{"id":89,"name":"walnoten","price":7,"cost":0},
+{"id":90,"name":"kastanjes","price":5,"cost":0}
 ];
 const SEED_KG_2026 = {"2":10.483,"13":1.734,"17":1.072,"20":0.577,"24":3.42,"25":1.049,"26":0.065,"28":0.174,
 "34":0.033,"35":6.493,"41":7.001,"42":0.003,"44":0.245,"46":1.747,"47":0.247,"52":0.909,"53":1.089,
@@ -773,6 +788,18 @@ function migrate(data){
     }
   }
   if(!data.prices) data.prices = {};
+
+  // Vult de gewassenlijst aan met nieuwe catalogus-items (bv. asperges) die nog
+  // niet in dit account voorkomen — raakt bestaande gewassen/oogst/kosten nooit aan.
+  const existingNames = new Set(data.crops.map(c=>c.name.toLowerCase()));
+  let maxId = data.crops.length ? Math.max(...data.crops.map(c=>c.id)) : 0;
+  SEED_CROPS.forEach(sc=>{
+    if(!existingNames.has(sc.name.toLowerCase())){
+      maxId++;
+      data.crops.push({ id: maxId, name: sc.name, price: sc.price });
+      existingNames.add(sc.name.toLowerCase());
+    }
+  });
   if(!data.settings) data.settings = { goalWinst: 10000, goalKg: 100000, m3: "" };
   return data;
 }
